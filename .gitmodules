@@ -1,0 +1,3 @@
+[submodule "wayland-scanner/wayland"]
+	path = wayland-scanner/wayland
+	url = https://gitlab.freedesktop.org/wayland/wayland.git
