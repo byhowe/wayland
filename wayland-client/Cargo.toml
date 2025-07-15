@@ -10,3 +10,5 @@ path = "src/main.rs"
 [dependencies]
 rustix = '1.0'
 thiserror = '2.0'
+
+wayland-scanner = { version = '0.1', path = '../wayland-scanner' }

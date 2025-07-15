@@ -119,6 +119,7 @@ version = "0.1.0"
 dependencies = [
  "rustix",
  "thiserror",
+ "wayland-scanner",
 ]
 
 [[package]]
@@ -128,6 +129,7 @@ dependencies = [
  "proc-macro2",
  "quick-xml",
  "quote",
+ "syn",
 ]
 
 [[package]]

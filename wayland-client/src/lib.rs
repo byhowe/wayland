@@ -6,6 +6,12 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+pub mod protocol {
+    use wayland_scanner::generate;
+
+    generate!();
+}
+
 pub struct Connection
 {
     stream: UnixStream,
