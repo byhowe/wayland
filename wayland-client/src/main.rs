@@ -1,4 +1,4 @@
-use wl::Connection;
+use wayland_client::Connection;
 
 fn main()
 {
