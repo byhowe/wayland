@@ -1,4 +1,5 @@
 use std::io::BufRead;
+use std::str::FromStr;
 
 use quick_xml::Reader;
 use quick_xml::escape::resolve_xml_entity;
@@ -21,7 +22,7 @@ impl dtd::Protocol
         for attr in inner.attributes().map(Result::unwrap) {
             let Attribute { key: k, value: v } = attr;
             match k.0 {
-                b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"name" => name = Some(str::from_utf8(&v).unwrap().to_string()),
                 _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
             }
         }
@@ -120,7 +121,7 @@ impl dtd::Interface
         for attr in inner.attributes().map(Result::unwrap) {
             let Attribute { key: k, value: v } = attr;
             match k.0 {
-                b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"name" => name = Some(str::from_utf8(&v).unwrap().to_string()),
                 b"version" => version = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
                 _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
             }
@@ -189,11 +190,11 @@ impl dtd::Request
         for attr in inner.attributes().map(Result::unwrap) {
             let Attribute { key: k, value: v } = attr;
             match k.0 {
-                b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
-                b"type" => kind = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"name" => name = Some(str::from_utf8(&v).unwrap().to_string()),
+                b"type" => kind = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
                 b"since" => since = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
                 b"deprecated-since" => {
-                    deprecated_since = Some(String::from_utf8(v.into_owned()).unwrap())
+                    deprecated_since = Some(str::from_utf8(&v).unwrap().to_string())
                 }
                 _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
             }
@@ -252,8 +253,8 @@ impl dtd::Event
         for attr in inner.attributes().map(Result::unwrap) {
             let Attribute { key: k, value: v } = attr;
             match k.0 {
-                b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
-                b"type" => kind = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"name" => name = Some(str::from_utf8(&v).unwrap().to_string()),
+                b"type" => kind = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
                 b"since" => since = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
                 b"deprecated-since" => {
                     deprecated_since = Some(str::from_utf8(&v).unwrap().parse().unwrap());
@@ -313,7 +314,7 @@ impl dtd::Enum
         for attr in inner.attributes().map(Result::unwrap) {
             let Attribute { key: k, value: v } = attr;
             match k.0 {
-                b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"name" => name = Some(str::from_utf8(&v).unwrap().to_string()),
                 b"since" => since = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
                 b"bitfield" if v.as_ref() == b"true" => bitfield = true,
                 _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
@@ -372,9 +373,9 @@ impl dtd::Entry
         for attr in inner.attributes().map(Result::unwrap) {
             let Attribute { key: k, value: v } = attr;
             match k.0 {
-                b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
-                b"value" => value = Some(String::from_utf8(v.into_owned()).unwrap()),
-                b"summary" => summary = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"name" => name = Some(str::from_utf8(&v).unwrap().to_string()),
+                b"value" => value = Some(str::from_utf8(&v).unwrap().to_string()),
+                b"summary" => summary = Some(str::from_utf8(&v).unwrap().to_string()),
                 b"since" => since = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
                 b"deprecated-since" => {
                     deprecated_since = Some(str::from_utf8(&v).unwrap().parse().unwrap());
@@ -430,12 +431,12 @@ impl dtd::Arg
         for attr in inner.attributes().map(Result::unwrap) {
             let Attribute { key: k, value: v } = attr;
             match k.0 {
-                b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
-                b"type" => kind = Some(String::from_utf8(v.into_owned()).unwrap()),
-                b"summary" => summary = Some(String::from_utf8(v.into_owned()).unwrap()),
-                b"interface" => interface = Some(String::from_utf8(v.into_owned()).unwrap()),
-                b"allow-null" => allow_null = Some(String::from_utf8(v.into_owned()).unwrap()),
-                b"enum" => interface_enum = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"name" => name = Some(str::from_utf8(&v).unwrap().to_string()),
+                b"type" => kind = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
+                b"summary" => summary = Some(str::from_utf8(&v).unwrap().to_string()),
+                b"interface" => interface = Some(str::from_utf8(&v).unwrap().to_string()),
+                b"allow-null" => allow_null = Some(str::from_utf8(&v).unwrap().to_string()),
+                b"enum" => interface_enum = Some(str::from_utf8(&v).unwrap().to_string()),
                 _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
             }
         }
@@ -483,7 +484,7 @@ impl dtd::Description
         for attr in inner.attributes().map(Result::unwrap) {
             let Attribute { key: k, value: v } = attr;
             match k.0 {
-                b"summary" => summary = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"summary" => summary = Some(str::from_utf8(&v).unwrap().to_string()),
                 _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
             }
         }
@@ -510,6 +511,29 @@ impl dtd::Description
         Self {
             summary: summary.unwrap(),
             content,
+        }
+    }
+}
+
+impl FromStr for dtd::Type
+{
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err>
+    {
+        match s {
+            "int" => Ok(dtd::Type::Int),
+            "uint" => Ok(dtd::Type::Uint),
+            "fixed" => Ok(dtd::Type::Fixed),
+            "string" => Ok(dtd::Type::String),
+            "object" => Ok(dtd::Type::Object),
+            "new_id" => Ok(dtd::Type::NewId),
+            "array" => Ok(dtd::Type::Array),
+            "fd" => Ok(dtd::Type::Fd),
+
+            "destructor" => Ok(dtd::Type::Destructor),
+
+            _ => Err(format!("unknown type: {}", s)),
         }
     }
 }

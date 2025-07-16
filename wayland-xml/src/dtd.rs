@@ -30,7 +30,7 @@ pub struct Interface
 pub struct Request
 {
     pub name: String,
-    pub kind: Option<String>, // type
+    pub kind: Option<Type>, // type
     pub since: Option<i32>,
     pub deprecated_since: Option<String>,
     pub description: Option<Description>,
@@ -41,7 +41,7 @@ pub struct Request
 pub struct Event
 {
     pub name: String,
-    pub kind: Option<String>, // type
+    pub kind: Option<Type>, // type
     pub since: Option<i32>,
     pub deprecated_since: Option<i32>,
     pub description: Option<Description>,
@@ -73,7 +73,7 @@ pub struct Entry
 pub struct Arg
 {
     pub name: String,
-    pub kind: String, // type
+    pub kind: Type, // type
     pub summary: Option<String>,
     pub interface: Option<String>,
     pub allow_null: Option<String>,
@@ -86,4 +86,19 @@ pub struct Description
 {
     pub summary: String,
     pub content: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Type
+{
+    Int,
+    Uint,
+    Fixed,
+    String,
+    Object,
+    NewId,
+    Array,
+    Fd,
+
+    Destructor,
 }
