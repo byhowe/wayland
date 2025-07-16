@@ -28,6 +28,7 @@ fn main()
     }
 
     // let mut reader = Reader::from_reader(BufReader::new(file));
+    // reader.config_mut().trim_text(true);
     // let mut buf = Vec::new();
     // loop {
     //     let event = reader.read_event_into(&mut buf).unwrap();

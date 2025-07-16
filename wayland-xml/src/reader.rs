@@ -34,9 +34,11 @@ impl dtd::Protocol
         loop {
             match reader.read_event_into(&mut buf).unwrap() {
                 ref root @ Event::Start(ref data) if data.name().as_ref() == b"copyright" => {
+                    assert!(copyright.is_none(), "unexpected event: {:?}", root);
                     copyright = Some(dtd::Copyright::from_reader(reader, root));
                 }
                 ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
+                    assert!(description.is_none(), "unexpected event: {:?}", root);
                     description = Some(dtd::Description::from_reader(reader, root));
                 }
                 ref root @ Event::Start(ref data) if data.name().as_ref() == b"interface" => {
@@ -48,6 +50,11 @@ impl dtd::Protocol
             }
             buf.clear();
         }
+
+        assert!(
+            !interfaces.is_empty(),
+            "at least one interface must be present"
+        );
 
         Self {
             name: name.unwrap(),
@@ -128,6 +135,7 @@ impl dtd::Interface
         loop {
             match reader.read_event_into(&mut buf).unwrap() {
                 ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
+                    assert!(description.is_none(), "unexpected event: {:?}", root);
                     description = Some(dtd::Description::from_reader(reader, root));
                 }
                 ref root @ (Event::Start(ref data) | Event::Empty(ref data))
@@ -147,6 +155,11 @@ impl dtd::Interface
             }
             buf.clear();
         }
+
+        assert!(
+            requests.len() + events.len() + enums.len() > 0,
+            "at least one item must be present"
+        );
 
         Self {
             name: name.unwrap(),
@@ -169,8 +182,7 @@ impl dtd::Request
         let mut deprecated_since = None;
 
         let inner = match root {
-            Event::Start(data) => data,
-            Event::Empty(data) => data,
+            Event::Start(data) | Event::Empty(data) => data,
             _ => panic!("unexpected event: {:?}", root),
         };
 
@@ -197,6 +209,7 @@ impl dtd::Request
                     ref root @ (Event::Start(ref data) | Event::Empty(ref data))
                         if data.name().as_ref() == b"description" =>
                     {
+                        assert!(description.is_none(), "unexpected event: {:?}", root);
                         description = Some(dtd::Description::from_reader(reader, root));
                     }
                     ref root @ (Event::Start(ref data) | Event::Empty(ref data))
@@ -258,6 +271,7 @@ impl dtd::Event
                 ref root @ (Event::Start(ref data) | Event::Empty(ref data))
                     if data.name().as_ref() == b"description" =>
                 {
+                    assert!(description.is_none(), "unexpected event: {:?}", root);
                     description = Some(dtd::Description::from_reader(reader, root));
                 }
                 ref root @ (Event::Start(ref data) | Event::Empty(ref data))
@@ -315,6 +329,7 @@ impl dtd::Enum
                 ref root @ (Event::Start(ref data) | Event::Empty(ref data))
                     if data.name().as_ref() == b"description" =>
                 {
+                    assert!(description.is_none(), "unexpected event: {:?}", root);
                     description = Some(dtd::Description::from_reader(reader, root));
                 }
                 ref root @ (Event::Start(ref data) | Event::Empty(ref data))
@@ -350,8 +365,7 @@ impl dtd::Entry
         let mut deprecated_since = None;
 
         let inner = match root {
-            Event::Start(data) => data,
-            Event::Empty(data) => data,
+            Event::Start(data) | Event::Empty(data) => data,
             _ => panic!("unexpected event: {:?}", root),
         };
 
@@ -376,6 +390,7 @@ impl dtd::Entry
             loop {
                 match reader.read_event_into(&mut buf).unwrap() {
                     ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
+                        assert!(description.is_none(), "unexpected event: {:?}", root);
                         description = Some(dtd::Description::from_reader(reader, root))
                     }
                     Event::End(ref data) if data.name().as_ref() == b"entry" => break,
@@ -408,8 +423,7 @@ impl dtd::Arg
         let mut interface_enum = None;
 
         let inner = match root {
-            Event::Start(data) => data,
-            Event::Empty(data) => data,
+            Event::Start(data) | Event::Empty(data) => data,
             _ => panic!("unexpected event: {:?}", root),
         };
 
@@ -433,6 +447,7 @@ impl dtd::Arg
             loop {
                 match reader.read_event_into(&mut buf).unwrap() {
                     ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
+                        assert!(description.is_none(), "unexpected event: {:?}", root);
                         description = Some(dtd::Description::from_reader(reader, root))
                     }
                     Event::End(ref data) if data.name().as_ref() == b"arg" => break,
@@ -461,8 +476,7 @@ impl dtd::Description
         let mut summary = None;
 
         let inner = match root {
-            Event::Start(data) => data,
-            Event::Empty(data) => data,
+            Event::Start(data) | Event::Empty(data) => data,
             _ => panic!("unexpected event: {:?}", root),
         };
 
@@ -481,12 +495,11 @@ impl dtd::Description
             loop {
                 match reader.read_event_into(&mut buf).unwrap() {
                     Event::Text(ref data) => {
-                        content = Some(str::from_utf8(&data).unwrap().to_string())
+                        content
+                            .get_or_insert(String::new())
+                            .push_str(str::from_utf8(&data).unwrap());
                     }
-                    Event::End(ref data) => match data.name().as_ref() {
-                        b"description" => break,
-                        _ => panic!("unexpected end tag: {:?}", data),
-                    },
+                    Event::End(ref data) if data.name().as_ref() == b"description" => break,
                     Event::Comment(_) => {}
                     event => panic!("unexpected event: {:?}", event),
                 }
