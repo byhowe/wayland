@@ -3,4 +3,5 @@ resolver = "3"
 members = [
     "wayland-scanner",
     "wayland-client",
+    "wayland-xml",
 ]

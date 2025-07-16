@@ -1,0 +1,484 @@
+use std::io::BufRead;
+
+use quick_xml::Reader;
+use quick_xml::events::Event;
+use quick_xml::events::attributes::Attribute;
+
+use crate::dtd;
+
+impl dtd::Protocol
+{
+    pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
+    {
+        let mut name = None;
+
+        let inner = match root {
+            Event::Start(data) => data,
+            _ => panic!("unexpected event: {:?}", root),
+        };
+
+        for attr in inner.attributes().map(Result::unwrap) {
+            let Attribute { key: k, value: v } = attr;
+            match k.0 {
+                b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
+                _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
+            }
+        }
+
+        let mut copyright = None;
+        let mut description = None;
+        let mut interfaces = Vec::new();
+
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf).unwrap() {
+                ref root @ Event::Start(ref data) if data.name().as_ref() == b"copyright" => {
+                    copyright = Some(dtd::Copyright::from_reader(reader, root));
+                }
+                ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
+                    description = Some(dtd::Description::from_reader(reader, root));
+                }
+                ref root @ Event::Start(ref data) if data.name().as_ref() == b"interface" => {
+                    interfaces.push(dtd::Interface::from_reader(reader, root));
+                }
+                Event::End(ref data) if data.name().as_ref() == b"protocol" => break,
+                event => panic!("unexpected event: {:?}", event),
+            }
+            buf.clear();
+        }
+
+        Self {
+            name: name.unwrap(),
+            copyright,
+            description,
+            interfaces,
+        }
+    }
+}
+
+impl dtd::Copyright
+{
+    pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
+    {
+        let inner = match root {
+            Event::Start(data) => data,
+            _ => panic!("unexpected event: {:?}", root),
+        };
+
+        // for consistency
+        for attr in inner.attributes().map(Result::unwrap) {
+            let Attribute { key: k, value: v } = attr;
+            match k.0 {
+                _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
+            }
+        }
+
+        let mut content = None;
+
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf).unwrap() {
+                Event::Text(ref data) => content = Some(str::from_utf8(&data).unwrap().to_string()),
+                Event::End(ref data) if data.name().as_ref() == b"copyright" => break,
+                event => panic!("unexpected event: {:?}", event),
+            }
+            buf.clear();
+        }
+
+        Self {
+            content: content.unwrap(),
+        }
+    }
+}
+
+impl dtd::Interface
+{
+    pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
+    {
+        let mut name = None;
+        let mut version = None;
+
+        let inner = match root {
+            Event::Start(data) => data,
+            _ => panic!("unexpected event: {:?}", root),
+        };
+
+        for attr in inner.attributes().map(Result::unwrap) {
+            let Attribute { key: k, value: v } = attr;
+            match k.0 {
+                b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"version" => version = Some(String::from_utf8(v.into_owned()).unwrap()),
+                _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
+            }
+        }
+
+        let mut description = None;
+        let mut requests = Vec::new();
+        let mut events = Vec::new();
+        let mut enums = Vec::new();
+
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf).unwrap() {
+                ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
+                    description = Some(dtd::Description::from_reader(reader, root));
+                }
+                ref root @ Event::Start(ref data) if data.name().as_ref() == b"request" => {
+                    requests.push(dtd::Request::from_reader(reader, root));
+                }
+                ref root @ Event::Start(ref data) if data.name().as_ref() == b"event" => {
+                    events.push(dtd::Event::from_reader(reader, root));
+                }
+                ref root @ Event::Start(ref data) if data.name().as_ref() == b"enum" => {
+                    enums.push(dtd::Enum::from_reader(reader, root));
+                }
+                Event::End(ref data) if data.name().as_ref() == b"interface" => break,
+                Event::Comment(_) => {}
+                event => panic!("unexpected event: {:?}", event),
+            }
+            buf.clear();
+        }
+
+        Self {
+            name: name.unwrap(),
+            version: version.unwrap(),
+            description,
+            requests,
+            events,
+            enums,
+        }
+    }
+}
+
+impl dtd::Request
+{
+    pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
+    {
+        let mut name = None;
+        let mut kind = None;
+        let mut since = None;
+        let mut deprecated_since = None;
+
+        let inner = match root {
+            Event::Start(data) => data,
+            _ => panic!("unexpected event: {:?}", root),
+        };
+
+        for attr in inner.attributes().map(Result::unwrap) {
+            let Attribute { key: k, value: v } = attr;
+            match k.0 {
+                b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"type" => kind = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"since" => since = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"deprecated-since" => {
+                    deprecated_since = Some(String::from_utf8(v.into_owned()).unwrap())
+                }
+                _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
+            }
+        }
+
+        let mut description = None;
+        let mut args = Vec::new();
+
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf).unwrap() {
+                ref root @ (Event::Start(ref data) | Event::Empty(ref data))
+                    if data.name().as_ref() == b"description" =>
+                {
+                    description = Some(dtd::Description::from_reader(reader, root));
+                }
+                ref root @ (Event::Start(ref data) | Event::Empty(ref data))
+                    if data.name().as_ref() == b"arg" =>
+                {
+                    args.push(dtd::Arg::from_reader(reader, root));
+                }
+                Event::End(ref data) if data.name().as_ref() == b"request" => break,
+                event => panic!("unexpected event: {:?}", event),
+            }
+            buf.clear();
+        }
+
+        Self {
+            name: name.unwrap(),
+            kind,
+            since,
+            deprecated_since,
+            description,
+            args,
+        }
+    }
+}
+
+impl dtd::Event
+{
+    pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
+    {
+        let mut name = None;
+        let mut kind = None;
+        let mut since = None;
+        let mut deprecated_since = None;
+
+        let inner = match root {
+            Event::Start(data) => data,
+            _ => panic!("unexpected event: {:?}", root),
+        };
+
+        for attr in inner.attributes().map(Result::unwrap) {
+            let Attribute { key: k, value: v } = attr;
+            match k.0 {
+                b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"type" => kind = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"since" => since = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"deprecated-since" => {
+                    deprecated_since = Some(String::from_utf8(v.into_owned()).unwrap())
+                }
+                _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
+            }
+        }
+
+        let mut description = None;
+        let mut args = Vec::new();
+
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf).unwrap() {
+                ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
+                    description = Some(dtd::Description::from_reader(reader, root));
+                }
+                ref root @ (Event::Start(ref data) | Event::Empty(ref data))
+                    if data.name().as_ref() == b"arg" =>
+                {
+                    args.push(dtd::Arg::from_reader(reader, root));
+                }
+                Event::End(ref data) if data.name().as_ref() == b"event" => break,
+                event => panic!("unexpected event: {:?}", event),
+            }
+            buf.clear();
+        }
+
+        Self {
+            name: name.unwrap(),
+            kind,
+            since,
+            deprecated_since,
+            description,
+            args,
+        }
+    }
+}
+
+impl dtd::Enum
+{
+    pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
+    {
+        let mut name = None;
+        let mut since = None;
+        let mut bitfield = None;
+
+        let inner = match root {
+            Event::Start(data) => data,
+            _ => panic!("unexpected event: {:?}", root),
+        };
+
+        for attr in inner.attributes().map(Result::unwrap) {
+            let Attribute { key: k, value: v } = attr;
+            match k.0 {
+                b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"since" => since = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"bitfield" => bitfield = Some(String::from_utf8(v.into_owned()).unwrap()),
+                _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
+            }
+        }
+
+        let mut description = None;
+        let mut entries = Vec::new();
+
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf).unwrap() {
+                ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
+                    description = Some(dtd::Description::from_reader(reader, root));
+                }
+                ref root @ (Event::Start(ref data) | Event::Empty(ref data))
+                    if data.name().as_ref() == b"entry" =>
+                {
+                    entries.push(dtd::Entry::from_reader(reader, root));
+                }
+                Event::End(ref data) if data.name().as_ref() == b"enum" => break,
+                Event::Comment(_) => {}
+                event => panic!("unexpected event: {:?}", event),
+            }
+            buf.clear();
+        }
+
+        Self {
+            name: name.unwrap(),
+            since,
+            bitfield,
+            description,
+            entries,
+        }
+    }
+}
+
+impl dtd::Entry
+{
+    pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
+    {
+        let mut name = None;
+        let mut value = None;
+        let mut summary = None;
+        let mut since = None;
+        let mut deprecated_since = None;
+
+        let inner = match root {
+            Event::Start(data) => data,
+            Event::Empty(data) => data,
+            _ => panic!("unexpected event: {:?}", root),
+        };
+
+        for attr in inner.attributes().map(Result::unwrap) {
+            let Attribute { key: k, value: v } = attr;
+            match k.0 {
+                b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"value" => value = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"summary" => summary = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"since" => since = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"deprecated-since" => {
+                    deprecated_since = Some(String::from_utf8(v.into_owned()).unwrap())
+                }
+                _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
+            }
+        }
+
+        let mut description = None;
+
+        if let Event::Start(_) = root {
+            let mut buf = Vec::new();
+            loop {
+                match reader.read_event_into(&mut buf).unwrap() {
+                    ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
+                        description = Some(dtd::Description::from_reader(reader, root))
+                    }
+                    Event::End(ref data) if data.name().as_ref() == b"entry" => break,
+                    event => panic!("unexpected event: {:?}", event),
+                }
+                buf.clear();
+            }
+        }
+
+        Self {
+            name: name.unwrap(),
+            value: value.unwrap(),
+            summary,
+            since,
+            deprecated_since,
+            description,
+        }
+    }
+}
+
+impl dtd::Arg
+{
+    pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
+    {
+        let mut name = None;
+        let mut kind = None;
+        let mut summary = None;
+        let mut interface = None;
+        let mut allow_null = None;
+        let mut interface_enum = None;
+
+        let inner = match root {
+            Event::Start(data) => data,
+            Event::Empty(data) => data,
+            _ => panic!("unexpected event: {:?}", root),
+        };
+
+        for attr in inner.attributes().map(Result::unwrap) {
+            let Attribute { key: k, value: v } = attr;
+            match k.0 {
+                b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"type" => kind = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"summary" => summary = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"interface" => interface = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"allow-null" => allow_null = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"enum" => interface_enum = Some(String::from_utf8(v.into_owned()).unwrap()),
+                _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
+            }
+        }
+
+        let mut description = None;
+
+        if let Event::Start(_) = root {
+            let mut buf = Vec::new();
+            loop {
+                match reader.read_event_into(&mut buf).unwrap() {
+                    ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
+                        description = Some(dtd::Description::from_reader(reader, root))
+                    }
+                    Event::End(ref data) if data.name().as_ref() == b"arg" => break,
+                    event => panic!("unexpected event: {:?}", event),
+                }
+                buf.clear();
+            }
+        }
+
+        Self {
+            name: name.unwrap(),
+            kind: kind.unwrap(),
+            summary,
+            interface,
+            allow_null,
+            interface_enum,
+            description,
+        }
+    }
+}
+
+impl dtd::Description
+{
+    pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
+    {
+        let mut summary = None;
+
+        let inner = match root {
+            Event::Start(data) => data,
+            Event::Empty(data) => data,
+            _ => panic!("unexpected event: {:?}", root),
+        };
+
+        for attr in inner.attributes().map(Result::unwrap) {
+            let Attribute { key: k, value: v } = attr;
+            match k.0 {
+                b"summary" => summary = Some(String::from_utf8(v.into_owned()).unwrap()),
+                _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
+            }
+        }
+
+        let mut content = None;
+
+        if let Event::Start(_) = root {
+            let mut buf = Vec::new();
+            loop {
+                match reader.read_event_into(&mut buf).unwrap() {
+                    Event::Text(ref data) => {
+                        content = Some(str::from_utf8(&data).unwrap().to_string())
+                    }
+                    Event::End(ref data) => match data.name().as_ref() {
+                        b"description" => break,
+                        _ => panic!("unexpected end tag: {:?}", data),
+                    },
+                    event => panic!("unexpected event: {:?}", event),
+                }
+                buf.clear();
+            }
+        }
+
+        Self {
+            summary: summary.unwrap(),
+            content,
+        }
+    }
+}

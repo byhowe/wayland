@@ -1,0 +1,11 @@
+[package]
+name = "wayland-xml"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "wayland-xml-test"
+path = "src/main.rs"
+
+[dependencies]
+quick-xml = "0.38"
