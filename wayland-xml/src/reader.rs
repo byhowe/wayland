@@ -107,7 +107,7 @@ impl dtd::Interface
             let Attribute { key: k, value: v } = attr;
             match k.0 {
                 b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
-                b"version" => version = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"version" => version = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
                 _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
             }
         }
@@ -169,7 +169,7 @@ impl dtd::Request
             match k.0 {
                 b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
                 b"type" => kind = Some(String::from_utf8(v.into_owned()).unwrap()),
-                b"since" => since = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"since" => since = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
                 b"deprecated-since" => {
                     deprecated_since = Some(String::from_utf8(v.into_owned()).unwrap())
                 }
@@ -229,9 +229,9 @@ impl dtd::Event
             match k.0 {
                 b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
                 b"type" => kind = Some(String::from_utf8(v.into_owned()).unwrap()),
-                b"since" => since = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"since" => since = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
                 b"deprecated-since" => {
-                    deprecated_since = Some(String::from_utf8(v.into_owned()).unwrap())
+                    deprecated_since = Some(str::from_utf8(&v).unwrap().parse().unwrap());
                 }
                 _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
             }
@@ -274,7 +274,7 @@ impl dtd::Enum
     {
         let mut name = None;
         let mut since = None;
-        let mut bitfield = None;
+        let mut bitfield = false;
 
         let inner = match root {
             Event::Start(data) => data,
@@ -285,8 +285,8 @@ impl dtd::Enum
             let Attribute { key: k, value: v } = attr;
             match k.0 {
                 b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
-                b"since" => since = Some(String::from_utf8(v.into_owned()).unwrap()),
-                b"bitfield" => bitfield = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"since" => since = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
+                b"bitfield" if v.as_ref() == b"true" => bitfield = true,
                 _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
             }
         }
@@ -344,9 +344,9 @@ impl dtd::Entry
                 b"name" => name = Some(String::from_utf8(v.into_owned()).unwrap()),
                 b"value" => value = Some(String::from_utf8(v.into_owned()).unwrap()),
                 b"summary" => summary = Some(String::from_utf8(v.into_owned()).unwrap()),
-                b"since" => since = Some(String::from_utf8(v.into_owned()).unwrap()),
+                b"since" => since = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
                 b"deprecated-since" => {
-                    deprecated_since = Some(String::from_utf8(v.into_owned()).unwrap())
+                    deprecated_since = Some(str::from_utf8(&v).unwrap().parse().unwrap());
                 }
                 _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
             }

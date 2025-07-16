@@ -19,7 +19,7 @@ pub struct Copyright
 pub struct Interface
 {
     pub name: String,
-    pub version: String, // FIX: parse as int
+    pub version: i32,
     pub description: Option<Description>,
     pub requests: Vec<Request>,
     pub events: Vec<Event>,
@@ -30,8 +30,8 @@ pub struct Interface
 pub struct Request
 {
     pub name: String,
-    pub kind: Option<String>,  // type
-    pub since: Option<String>, // FIX: parse as int
+    pub kind: Option<String>, // type
+    pub since: Option<i32>,
     pub deprecated_since: Option<String>,
     pub description: Option<Description>,
     pub args: Vec<Arg>,
@@ -41,9 +41,9 @@ pub struct Request
 pub struct Event
 {
     pub name: String,
-    pub kind: Option<String>,             // type
-    pub since: Option<String>,            // FIX: parse as int
-    pub deprecated_since: Option<String>, // FIX: parse as int
+    pub kind: Option<String>, // type
+    pub since: Option<i32>,
+    pub deprecated_since: Option<i32>,
     pub description: Option<Description>,
     pub args: Vec<Arg>,
 }
@@ -52,8 +52,8 @@ pub struct Event
 pub struct Enum
 {
     pub name: String,
-    pub since: Option<String>,    // FIX: parse as int
-    pub bitfield: Option<String>, // FIX: parse as bool
+    pub since: Option<i32>,
+    pub bitfield: bool,
     pub description: Option<Description>,
     pub entries: Vec<Entry>,
 }
@@ -64,8 +64,8 @@ pub struct Entry
     pub name: String,
     pub value: String,
     pub summary: Option<String>,
-    pub since: Option<String>,            // FIX: parse as int
-    pub deprecated_since: Option<String>, // FIX: parse as int
+    pub since: Option<i32>,
+    pub deprecated_since: Option<i32>,
     pub description: Option<Description>,
 }
 
