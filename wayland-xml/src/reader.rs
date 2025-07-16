@@ -1,6 +1,7 @@
 use std::io::BufRead;
 
 use quick_xml::Reader;
+use quick_xml::escape::resolve_xml_entity;
 use quick_xml::events::Event;
 use quick_xml::events::attributes::Attribute;
 
@@ -42,6 +43,7 @@ impl dtd::Protocol
                     interfaces.push(dtd::Interface::from_reader(reader, root));
                 }
                 Event::End(ref data) if data.name().as_ref() == b"protocol" => break,
+                Event::Comment(_) => {}
                 event => panic!("unexpected event: {:?}", event),
             }
             buf.clear();
@@ -78,7 +80,12 @@ impl dtd::Copyright
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf).unwrap() {
-                Event::Text(ref data) => content = Some(str::from_utf8(&data).unwrap().to_string()),
+                Event::Text(ref data) => content
+                    .get_or_insert(String::new())
+                    .push_str(str::from_utf8(&data).unwrap()),
+                Event::GeneralRef(ref data) => content
+                    .get_or_insert(String::new())
+                    .push_str(resolve_xml_entity(str::from_utf8(&data).unwrap()).unwrap()),
                 Event::End(ref data) if data.name().as_ref() == b"copyright" => break,
                 event => panic!("unexpected event: {:?}", event),
             }
@@ -123,7 +130,9 @@ impl dtd::Interface
                 ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
                     description = Some(dtd::Description::from_reader(reader, root));
                 }
-                ref root @ Event::Start(ref data) if data.name().as_ref() == b"request" => {
+                ref root @ (Event::Start(ref data) | Event::Empty(ref data))
+                    if data.name().as_ref() == b"request" =>
+                {
                     requests.push(dtd::Request::from_reader(reader, root));
                 }
                 ref root @ Event::Start(ref data) if data.name().as_ref() == b"event" => {
@@ -161,6 +170,7 @@ impl dtd::Request
 
         let inner = match root {
             Event::Start(data) => data,
+            Event::Empty(data) => data,
             _ => panic!("unexpected event: {:?}", root),
         };
 
@@ -180,23 +190,25 @@ impl dtd::Request
         let mut description = None;
         let mut args = Vec::new();
 
-        let mut buf = Vec::new();
-        loop {
-            match reader.read_event_into(&mut buf).unwrap() {
-                ref root @ (Event::Start(ref data) | Event::Empty(ref data))
-                    if data.name().as_ref() == b"description" =>
-                {
-                    description = Some(dtd::Description::from_reader(reader, root));
+        if let Event::Start(_) = root {
+            let mut buf = Vec::new();
+            loop {
+                match reader.read_event_into(&mut buf).unwrap() {
+                    ref root @ (Event::Start(ref data) | Event::Empty(ref data))
+                        if data.name().as_ref() == b"description" =>
+                    {
+                        description = Some(dtd::Description::from_reader(reader, root));
+                    }
+                    ref root @ (Event::Start(ref data) | Event::Empty(ref data))
+                        if data.name().as_ref() == b"arg" =>
+                    {
+                        args.push(dtd::Arg::from_reader(reader, root));
+                    }
+                    Event::End(ref data) if data.name().as_ref() == b"request" => break,
+                    event => panic!("unexpected event: {:?}", event),
                 }
-                ref root @ (Event::Start(ref data) | Event::Empty(ref data))
-                    if data.name().as_ref() == b"arg" =>
-                {
-                    args.push(dtd::Arg::from_reader(reader, root));
-                }
-                Event::End(ref data) if data.name().as_ref() == b"request" => break,
-                event => panic!("unexpected event: {:?}", event),
+                buf.clear();
             }
-            buf.clear();
         }
 
         Self {
@@ -243,7 +255,9 @@ impl dtd::Event
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf).unwrap() {
-                ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
+                ref root @ (Event::Start(ref data) | Event::Empty(ref data))
+                    if data.name().as_ref() == b"description" =>
+                {
                     description = Some(dtd::Description::from_reader(reader, root));
                 }
                 ref root @ (Event::Start(ref data) | Event::Empty(ref data))
@@ -252,6 +266,7 @@ impl dtd::Event
                     args.push(dtd::Arg::from_reader(reader, root));
                 }
                 Event::End(ref data) if data.name().as_ref() == b"event" => break,
+                Event::Comment(_) => {}
                 event => panic!("unexpected event: {:?}", event),
             }
             buf.clear();
@@ -297,7 +312,9 @@ impl dtd::Enum
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf).unwrap() {
-                ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
+                ref root @ (Event::Start(ref data) | Event::Empty(ref data))
+                    if data.name().as_ref() == b"description" =>
+                {
                     description = Some(dtd::Description::from_reader(reader, root));
                 }
                 ref root @ (Event::Start(ref data) | Event::Empty(ref data))
@@ -470,6 +487,7 @@ impl dtd::Description
                         b"description" => break,
                         _ => panic!("unexpected end tag: {:?}", data),
                     },
+                    Event::Comment(_) => {}
                     event => panic!("unexpected event: {:?}", event),
                 }
                 buf.clear();

@@ -1,9 +1,12 @@
 use std::env;
 use std::fs::File;
 use std::io::BufReader;
+use std::panic;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use quick_xml::Reader;
+use quick_xml::events::Event;
 use wayland_xml::from_reader;
 
 fn main()
@@ -17,6 +20,20 @@ fn main()
         path
     };
     let file = File::open(&path).unwrap();
-    let protocols = from_reader(BufReader::new(file));
-    println!("{:#?}", protocols);
+    let result = panic::catch_unwind(|| {
+        let protocols = from_reader(BufReader::new(file));
+    });
+    if result.is_err() {
+        println!("{:?}", path);
+    }
+
+    // let mut reader = Reader::from_reader(BufReader::new(file));
+    // let mut buf = Vec::new();
+    // loop {
+    //     let event = reader.read_event_into(&mut buf).unwrap();
+    //     println!("{:?}", event);
+    //     if event == Event::Eof {
+    //         break;
+    //     }
+    // }
 }
