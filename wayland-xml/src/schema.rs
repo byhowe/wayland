@@ -19,7 +19,7 @@ pub struct Copyright
 pub struct Interface
 {
     pub name: String,
-    pub version: i32,
+    pub version: u32,
     pub description: Option<Description>,
     pub requests: Vec<Message>,
     pub events: Vec<Message>,
@@ -31,8 +31,8 @@ pub struct Message
 {
     pub name: String,
     pub destructor: bool,
-    pub since: i32,
-    pub deprecated_since: Option<String>,
+    pub since: u32,
+    pub deprecated_since: Option<u32>,
     pub description: Option<Description>,
     pub args: Vec<Arg>,
 }
@@ -41,7 +41,7 @@ pub struct Message
 pub struct Enum
 {
     pub name: String,
-    pub since: i32,
+    pub since: u32,
     pub bitfield: bool,
     pub description: Option<Description>,
     pub entries: Vec<Entry>,
@@ -53,8 +53,8 @@ pub struct Entry
     pub name: String,
     pub value: String,
     pub summary: Option<String>,
-    pub since: i32,
-    pub deprecated_since: Option<i32>,
+    pub since: u32,
+    pub deprecated_since: Option<u32>,
     pub description: Option<Description>,
 }
 

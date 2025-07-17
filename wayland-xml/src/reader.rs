@@ -205,7 +205,7 @@ impl Message
                 }
                 b"since" => since = str::from_utf8(&v).unwrap().parse().unwrap(),
                 b"deprecated-since" => {
-                    deprecated_since = Some(str::from_utf8(&v).unwrap().to_string())
+                    deprecated_since = Some(str::from_utf8(&v).unwrap().parse().unwrap())
                 }
                 _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
             }
