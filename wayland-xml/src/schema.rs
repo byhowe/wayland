@@ -62,11 +62,11 @@ pub struct Entry
 pub struct Arg
 {
     pub name: String,
-    pub kind: Type, // type
+    pub typ: Type,
     pub summary: Option<String>,
     pub interface: Option<String>,
     pub allow_null: bool,
-    pub interface_enum: Option<String>, // enum
+    pub enu: Option<String>,
     pub description: Option<Description>,
 }
 

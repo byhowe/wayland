@@ -355,11 +355,11 @@ impl Arg
     pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
     {
         let mut name = None;
-        let mut kind = None;
+        let mut typ = None;
         let mut summary = None;
         let mut interface = None;
         let mut allow_null = false;
-        let mut interface_enum = None;
+        let mut enu = None;
 
         let inner = match root {
             Event::Start(data) => data,
@@ -370,7 +370,7 @@ impl Arg
             let Attribute { key: k, value: v } = attr;
             match k.0 {
                 b"name" => name = Some(str::from_utf8(&v).unwrap().to_string()),
-                b"type" => kind = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
+                b"type" => typ = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
                 b"summary" => summary = Some(str::from_utf8(&v).unwrap().to_string()),
                 b"interface" => interface = Some(str::from_utf8(&v).unwrap().to_string()),
                 b"allow-null" => {
@@ -379,7 +379,7 @@ impl Arg
                         _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
                     }
                 }
-                b"enum" => interface_enum = Some(str::from_utf8(&v).unwrap().to_string()),
+                b"enum" => enu = Some(str::from_utf8(&v).unwrap().to_string()),
                 _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
             }
         }
@@ -401,11 +401,11 @@ impl Arg
 
         Self {
             name: name.unwrap(),
-            kind: kind.unwrap(),
+            typ: typ.unwrap(),
             summary,
             interface,
             allow_null,
-            interface_enum,
+            enu,
             description,
         }
     }
