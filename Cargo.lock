@@ -127,9 +127,9 @@ name = "wayland-scanner"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
- "quick-xml",
  "quote",
  "syn",
+ "wayland-xml",
 ]
 
 [[package]]

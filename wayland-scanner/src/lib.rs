@@ -1,11 +1,22 @@
+#![feature(trim_prefix_suffix)]
+
 use std::env;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::PathBuf;
 
-use proc_macro2::TokenStream;
+use quote::ToTokens;
+use quote::quote;
 use syn::LitStr;
 use syn::parse::Parse;
 use syn::parse::ParseStream;
 use syn::parse_macro_input;
+
+use crate::generator::Enum;
+use crate::generator::Protocol;
+
+mod generator;
+mod util;
 
 // Path to the .xml file.
 struct SpecPath(Option<LitStr>);
@@ -54,12 +65,9 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 {
     let path: PathBuf = parse_macro_input!(input as SpecPath).into();
 
-    panic!("{:?}", path);
+    let reader = File::open(path).unwrap();
+    let binding = wayland_xml::from_reader(BufReader::new(reader));
+    let protocols = binding.iter().map(|protocol| Protocol(protocol));
 
-    let output: proc_macro2::TokenStream = {
-        /* transform input */
-        TokenStream::new()
-    };
-
-    proc_macro::TokenStream::from(output)
+    quote! { #(#protocols)* }.into()
 }

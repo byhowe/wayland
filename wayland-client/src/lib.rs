@@ -6,7 +6,8 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-pub mod protocol {
+pub mod protocol
+{
     use wayland_scanner::generate;
 
     generate!();
