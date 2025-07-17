@@ -106,7 +106,7 @@ impl ToTokens for Enum<'_>
     {
         let enum_name = self.name();
 
-        let variants: Vec<TokenStream> = self
+        let variants = self
             .entries()
             .map(|entry| {
                 let name = entry.name();
@@ -115,10 +115,9 @@ impl ToTokens for Enum<'_>
                 quote! {
                     #name = #value
                 }
-            })
-            .collect();
+            });
 
-        let try_from_arms: Vec<TokenStream> = self
+        let try_from_arms = self
             .entries()
             .map(|entry| {
                 let name = entry.name();
@@ -127,8 +126,7 @@ impl ToTokens for Enum<'_>
                 quote! {
                     #value => Ok(#enum_name::#name)
                 }
-            })
-            .collect();
+            });
 
         quote! {
             #[repr(u32)]
