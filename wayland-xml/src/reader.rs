@@ -6,9 +6,17 @@ use quick_xml::escape::resolve_xml_entity;
 use quick_xml::events::Event;
 use quick_xml::events::attributes::Attribute;
 
-use crate::dtd;
+use crate::dtd::Arg;
+use crate::dtd::Copyright;
+use crate::dtd::Description;
+use crate::dtd::Entry;
+use crate::dtd::Enum;
+use crate::dtd::Interface;
+use crate::dtd::Message;
+use crate::dtd::Protocol;
+use crate::dtd::Type;
 
-impl dtd::Protocol
+impl Protocol
 {
     pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
     {
@@ -36,14 +44,14 @@ impl dtd::Protocol
             match reader.read_event_into(&mut buf).unwrap() {
                 ref root @ Event::Start(ref data) if data.name().as_ref() == b"copyright" => {
                     assert!(copyright.is_none(), "unexpected event: {:?}", root);
-                    copyright = Some(dtd::Copyright::from_reader(reader, root));
+                    copyright = Some(Copyright::from_reader(reader, root));
                 }
                 ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
                     assert!(description.is_none(), "unexpected event: {:?}", root);
-                    description = Some(dtd::Description::from_reader(reader, root));
+                    description = Some(Description::from_reader(reader, root));
                 }
                 ref root @ Event::Start(ref data) if data.name().as_ref() == b"interface" => {
-                    interfaces.push(dtd::Interface::from_reader(reader, root));
+                    interfaces.push(Interface::from_reader(reader, root));
                 }
                 Event::End(ref data) if data.name().as_ref() == b"protocol" => break,
                 Event::Comment(_) => {}
@@ -66,7 +74,7 @@ impl dtd::Protocol
     }
 }
 
-impl dtd::Copyright
+impl Copyright
 {
     pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
     {
@@ -106,7 +114,7 @@ impl dtd::Copyright
     }
 }
 
-impl dtd::Interface
+impl Interface
 {
     pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
     {
@@ -137,18 +145,18 @@ impl dtd::Interface
             match reader.read_event_into(&mut buf).unwrap() {
                 ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
                     assert!(description.is_none(), "unexpected event: {:?}", root);
-                    description = Some(dtd::Description::from_reader(reader, root));
+                    description = Some(Description::from_reader(reader, root));
                 }
                 ref root @ (Event::Start(ref data) | Event::Empty(ref data))
                     if data.name().as_ref() == b"request" =>
                 {
-                    requests.push(dtd::Request::from_reader(reader, root));
+                    requests.push(Message::from_reader(reader, root));
                 }
                 ref root @ Event::Start(ref data) if data.name().as_ref() == b"event" => {
-                    events.push(dtd::Event::from_reader(reader, root));
+                    events.push(Message::from_reader(reader, root));
                 }
                 ref root @ Event::Start(ref data) if data.name().as_ref() == b"enum" => {
-                    enums.push(dtd::Enum::from_reader(reader, root));
+                    enums.push(Enum::from_reader(reader, root));
                 }
                 Event::End(ref data) if data.name().as_ref() == b"interface" => break,
                 Event::Comment(_) => {}
@@ -173,13 +181,13 @@ impl dtd::Interface
     }
 }
 
-impl dtd::Request
+impl Message
 {
     pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
     {
         let mut name = None;
         let mut kind = None;
-        let mut since = None;
+        let mut since = 1;
         let mut deprecated_since = None;
 
         let inner = match root {
@@ -192,7 +200,7 @@ impl dtd::Request
             match k.0 {
                 b"name" => name = Some(str::from_utf8(&v).unwrap().to_string()),
                 b"type" => kind = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
-                b"since" => since = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
+                b"since" => since = str::from_utf8(&v).unwrap().parse().unwrap(),
                 b"deprecated-since" => {
                     deprecated_since = Some(str::from_utf8(&v).unwrap().to_string())
                 }
@@ -211,14 +219,15 @@ impl dtd::Request
                         if data.name().as_ref() == b"description" =>
                     {
                         assert!(description.is_none(), "unexpected event: {:?}", root);
-                        description = Some(dtd::Description::from_reader(reader, root));
+                        description = Some(Description::from_reader(reader, root));
                     }
                     ref root @ (Event::Start(ref data) | Event::Empty(ref data))
                         if data.name().as_ref() == b"arg" =>
                     {
-                        args.push(dtd::Arg::from_reader(reader, root));
+                        args.push(Arg::from_reader(reader, root));
                     }
-                    Event::End(ref data) if data.name().as_ref() == b"request" => break,
+                    Event::End(ref data) if data.name() == inner.name() => break,
+                    Event::Comment(_) => {}
                     event => panic!("unexpected event: {:?}", event),
                 }
                 buf.clear();
@@ -236,74 +245,12 @@ impl dtd::Request
     }
 }
 
-impl dtd::Event
+impl Enum
 {
     pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
     {
         let mut name = None;
-        let mut kind = None;
-        let mut since = None;
-        let mut deprecated_since = None;
-
-        let inner = match root {
-            Event::Start(data) => data,
-            _ => panic!("unexpected event: {:?}", root),
-        };
-
-        for attr in inner.attributes().map(Result::unwrap) {
-            let Attribute { key: k, value: v } = attr;
-            match k.0 {
-                b"name" => name = Some(str::from_utf8(&v).unwrap().to_string()),
-                b"type" => kind = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
-                b"since" => since = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
-                b"deprecated-since" => {
-                    deprecated_since = Some(str::from_utf8(&v).unwrap().parse().unwrap());
-                }
-                _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
-            }
-        }
-
-        let mut description = None;
-        let mut args = Vec::new();
-
-        let mut buf = Vec::new();
-        loop {
-            match reader.read_event_into(&mut buf).unwrap() {
-                ref root @ (Event::Start(ref data) | Event::Empty(ref data))
-                    if data.name().as_ref() == b"description" =>
-                {
-                    assert!(description.is_none(), "unexpected event: {:?}", root);
-                    description = Some(dtd::Description::from_reader(reader, root));
-                }
-                ref root @ (Event::Start(ref data) | Event::Empty(ref data))
-                    if data.name().as_ref() == b"arg" =>
-                {
-                    args.push(dtd::Arg::from_reader(reader, root));
-                }
-                Event::End(ref data) if data.name().as_ref() == b"event" => break,
-                Event::Comment(_) => {}
-                event => panic!("unexpected event: {:?}", event),
-            }
-            buf.clear();
-        }
-
-        Self {
-            name: name.unwrap(),
-            kind,
-            since,
-            deprecated_since,
-            description,
-            args,
-        }
-    }
-}
-
-impl dtd::Enum
-{
-    pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
-    {
-        let mut name = None;
-        let mut since = None;
+        let mut since = 1;
         let mut bitfield = false;
 
         let inner = match root {
@@ -315,7 +262,7 @@ impl dtd::Enum
             let Attribute { key: k, value: v } = attr;
             match k.0 {
                 b"name" => name = Some(str::from_utf8(&v).unwrap().to_string()),
-                b"since" => since = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
+                b"since" => since = str::from_utf8(&v).unwrap().parse().unwrap(),
                 b"bitfield" if v.as_ref() == b"true" => bitfield = true,
                 _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
             }
@@ -331,12 +278,12 @@ impl dtd::Enum
                     if data.name().as_ref() == b"description" =>
                 {
                     assert!(description.is_none(), "unexpected event: {:?}", root);
-                    description = Some(dtd::Description::from_reader(reader, root));
+                    description = Some(Description::from_reader(reader, root));
                 }
                 ref root @ (Event::Start(ref data) | Event::Empty(ref data))
                     if data.name().as_ref() == b"entry" =>
                 {
-                    entries.push(dtd::Entry::from_reader(reader, root));
+                    entries.push(Entry::from_reader(reader, root));
                 }
                 Event::End(ref data) if data.name().as_ref() == b"enum" => break,
                 Event::Comment(_) => {}
@@ -355,14 +302,14 @@ impl dtd::Enum
     }
 }
 
-impl dtd::Entry
+impl Entry
 {
     pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
     {
         let mut name = None;
         let mut value = None;
         let mut summary = None;
-        let mut since = None;
+        let mut since = 1;
         let mut deprecated_since = None;
 
         let inner = match root {
@@ -376,7 +323,7 @@ impl dtd::Entry
                 b"name" => name = Some(str::from_utf8(&v).unwrap().to_string()),
                 b"value" => value = Some(str::from_utf8(&v).unwrap().to_string()),
                 b"summary" => summary = Some(str::from_utf8(&v).unwrap().to_string()),
-                b"since" => since = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
+                b"since" => since = str::from_utf8(&v).unwrap().parse().unwrap(),
                 b"deprecated-since" => {
                     deprecated_since = Some(str::from_utf8(&v).unwrap().parse().unwrap());
                 }
@@ -392,7 +339,7 @@ impl dtd::Entry
                 match reader.read_event_into(&mut buf).unwrap() {
                     ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
                         assert!(description.is_none(), "unexpected event: {:?}", root);
-                        description = Some(dtd::Description::from_reader(reader, root))
+                        description = Some(Description::from_reader(reader, root))
                     }
                     Event::End(ref data) if data.name().as_ref() == b"entry" => break,
                     event => panic!("unexpected event: {:?}", event),
@@ -412,7 +359,7 @@ impl dtd::Entry
     }
 }
 
-impl dtd::Arg
+impl Arg
 {
     pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
     {
@@ -420,7 +367,7 @@ impl dtd::Arg
         let mut kind = None;
         let mut summary = None;
         let mut interface = None;
-        let mut allow_null = None;
+        let mut allow_null = false;
         let mut interface_enum = None;
 
         let inner = match root {
@@ -435,7 +382,12 @@ impl dtd::Arg
                 b"type" => kind = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
                 b"summary" => summary = Some(str::from_utf8(&v).unwrap().to_string()),
                 b"interface" => interface = Some(str::from_utf8(&v).unwrap().to_string()),
-                b"allow-null" => allow_null = Some(str::from_utf8(&v).unwrap().to_string()),
+                b"allow-null" => {
+                    allow_null = match v.as_ref() {
+                        b"true" => true,
+                        _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
+                    }
+                }
                 b"enum" => interface_enum = Some(str::from_utf8(&v).unwrap().to_string()),
                 _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
             }
@@ -449,7 +401,7 @@ impl dtd::Arg
                 match reader.read_event_into(&mut buf).unwrap() {
                     ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
                         assert!(description.is_none(), "unexpected event: {:?}", root);
-                        description = Some(dtd::Description::from_reader(reader, root))
+                        description = Some(Description::from_reader(reader, root))
                     }
                     Event::End(ref data) if data.name().as_ref() == b"arg" => break,
                     event => panic!("unexpected event: {:?}", event),
@@ -470,7 +422,7 @@ impl dtd::Arg
     }
 }
 
-impl dtd::Description
+impl Description
 {
     pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
     {
@@ -515,23 +467,23 @@ impl dtd::Description
     }
 }
 
-impl FromStr for dtd::Type
+impl FromStr for Type
 {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err>
     {
         match s {
-            "int" => Ok(dtd::Type::Int),
-            "uint" => Ok(dtd::Type::Uint),
-            "fixed" => Ok(dtd::Type::Fixed),
-            "string" => Ok(dtd::Type::String),
-            "object" => Ok(dtd::Type::Object),
-            "new_id" => Ok(dtd::Type::NewId),
-            "array" => Ok(dtd::Type::Array),
-            "fd" => Ok(dtd::Type::Fd),
+            "int" => Ok(Type::Int),
+            "uint" => Ok(Type::Uint),
+            "fixed" => Ok(Type::Fixed),
+            "string" => Ok(Type::String),
+            "object" => Ok(Type::Object),
+            "new_id" => Ok(Type::NewId),
+            "array" => Ok(Type::Array),
+            "fd" => Ok(Type::Fd),
 
-            "destructor" => Ok(dtd::Type::Destructor),
+            "destructor" => Ok(Type::Destructor),
 
             _ => Err(format!("unknown type: {}", s)),
         }

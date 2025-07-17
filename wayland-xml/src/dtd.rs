@@ -21,29 +21,18 @@ pub struct Interface
     pub name: String,
     pub version: i32,
     pub description: Option<Description>,
-    pub requests: Vec<Request>,
-    pub events: Vec<Event>,
+    pub requests: Vec<Message>,
+    pub events: Vec<Message>,
     pub enums: Vec<Enum>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Request
+pub struct Message
 {
     pub name: String,
     pub kind: Option<Type>, // type
-    pub since: Option<i32>,
+    pub since: i32,
     pub deprecated_since: Option<String>,
-    pub description: Option<Description>,
-    pub args: Vec<Arg>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Event
-{
-    pub name: String,
-    pub kind: Option<Type>, // type
-    pub since: Option<i32>,
-    pub deprecated_since: Option<i32>,
     pub description: Option<Description>,
     pub args: Vec<Arg>,
 }
@@ -52,7 +41,7 @@ pub struct Event
 pub struct Enum
 {
     pub name: String,
-    pub since: Option<i32>,
+    pub since: i32,
     pub bitfield: bool,
     pub description: Option<Description>,
     pub entries: Vec<Entry>,
@@ -64,7 +53,7 @@ pub struct Entry
     pub name: String,
     pub value: String,
     pub summary: Option<String>,
-    pub since: Option<i32>,
+    pub since: i32,
     pub deprecated_since: Option<i32>,
     pub description: Option<Description>,
 }
@@ -76,7 +65,7 @@ pub struct Arg
     pub kind: Type, // type
     pub summary: Option<String>,
     pub interface: Option<String>,
-    pub allow_null: Option<String>,
+    pub allow_null: bool,
     pub interface_enum: Option<String>, // enum
     pub description: Option<Description>,
 }
