@@ -147,9 +147,7 @@ impl Interface
                     assert!(description.is_none(), "unexpected event: {:?}", root);
                     description = Some(Description::from_reader(reader, root));
                 }
-                ref root @ (Event::Start(ref data) | Event::Empty(ref data))
-                    if data.name().as_ref() == b"request" =>
-                {
+                ref root @ Event::Start(ref data) if data.name().as_ref() == b"request" => {
                     requests.push(Message::from_reader(reader, root));
                 }
                 ref root @ Event::Start(ref data) if data.name().as_ref() == b"event" => {
@@ -191,7 +189,7 @@ impl Message
         let mut deprecated_since = None;
 
         let inner = match root {
-            Event::Start(data) | Event::Empty(data) => data,
+            Event::Start(data) => data,
             _ => panic!("unexpected event: {:?}", root),
         };
 
@@ -211,27 +209,21 @@ impl Message
         let mut description = None;
         let mut args = Vec::new();
 
-        if let Event::Start(_) = root {
-            let mut buf = Vec::new();
-            loop {
-                match reader.read_event_into(&mut buf).unwrap() {
-                    ref root @ (Event::Start(ref data) | Event::Empty(ref data))
-                        if data.name().as_ref() == b"description" =>
-                    {
-                        assert!(description.is_none(), "unexpected event: {:?}", root);
-                        description = Some(Description::from_reader(reader, root));
-                    }
-                    ref root @ (Event::Start(ref data) | Event::Empty(ref data))
-                        if data.name().as_ref() == b"arg" =>
-                    {
-                        args.push(Arg::from_reader(reader, root));
-                    }
-                    Event::End(ref data) if data.name() == inner.name() => break,
-                    Event::Comment(_) => {}
-                    event => panic!("unexpected event: {:?}", event),
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf).unwrap() {
+                ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
+                    assert!(description.is_none(), "unexpected event: {:?}", root);
+                    description = Some(Description::from_reader(reader, root));
                 }
-                buf.clear();
+                ref root @ Event::Start(ref data) if data.name().as_ref() == b"arg" => {
+                    args.push(Arg::from_reader(reader, root));
+                }
+                Event::End(ref data) if data.name() == inner.name() => break,
+                Event::Comment(_) => {}
+                event => panic!("unexpected event: {:?}", event),
             }
+            buf.clear();
         }
 
         Self {
@@ -274,15 +266,11 @@ impl Enum
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf).unwrap() {
-                ref root @ (Event::Start(ref data) | Event::Empty(ref data))
-                    if data.name().as_ref() == b"description" =>
-                {
+                ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
                     assert!(description.is_none(), "unexpected event: {:?}", root);
                     description = Some(Description::from_reader(reader, root));
                 }
-                ref root @ (Event::Start(ref data) | Event::Empty(ref data))
-                    if data.name().as_ref() == b"entry" =>
-                {
+                ref root @ Event::Start(ref data) if data.name().as_ref() == b"entry" => {
                     entries.push(Entry::from_reader(reader, root));
                 }
                 Event::End(ref data) if data.name().as_ref() == b"enum" => break,
@@ -313,7 +301,7 @@ impl Entry
         let mut deprecated_since = None;
 
         let inner = match root {
-            Event::Start(data) | Event::Empty(data) => data,
+            Event::Start(data) => data,
             _ => panic!("unexpected event: {:?}", root),
         };
 
@@ -333,19 +321,17 @@ impl Entry
 
         let mut description = None;
 
-        if let Event::Start(_) = root {
-            let mut buf = Vec::new();
-            loop {
-                match reader.read_event_into(&mut buf).unwrap() {
-                    ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
-                        assert!(description.is_none(), "unexpected event: {:?}", root);
-                        description = Some(Description::from_reader(reader, root))
-                    }
-                    Event::End(ref data) if data.name().as_ref() == b"entry" => break,
-                    event => panic!("unexpected event: {:?}", event),
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf).unwrap() {
+                ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
+                    assert!(description.is_none(), "unexpected event: {:?}", root);
+                    description = Some(Description::from_reader(reader, root))
                 }
-                buf.clear();
+                Event::End(ref data) if data.name().as_ref() == b"entry" => break,
+                event => panic!("unexpected event: {:?}", event),
             }
+            buf.clear();
         }
 
         Self {
@@ -371,7 +357,7 @@ impl Arg
         let mut interface_enum = None;
 
         let inner = match root {
-            Event::Start(data) | Event::Empty(data) => data,
+            Event::Start(data) => data,
             _ => panic!("unexpected event: {:?}", root),
         };
 
@@ -395,19 +381,17 @@ impl Arg
 
         let mut description = None;
 
-        if let Event::Start(_) = root {
-            let mut buf = Vec::new();
-            loop {
-                match reader.read_event_into(&mut buf).unwrap() {
-                    ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
-                        assert!(description.is_none(), "unexpected event: {:?}", root);
-                        description = Some(Description::from_reader(reader, root))
-                    }
-                    Event::End(ref data) if data.name().as_ref() == b"arg" => break,
-                    event => panic!("unexpected event: {:?}", event),
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf).unwrap() {
+                ref root @ Event::Start(ref data) if data.name().as_ref() == b"description" => {
+                    assert!(description.is_none(), "unexpected event: {:?}", root);
+                    description = Some(Description::from_reader(reader, root))
                 }
-                buf.clear();
+                Event::End(ref data) if data.name().as_ref() == b"arg" => break,
+                event => panic!("unexpected event: {:?}", event),
             }
+            buf.clear();
         }
 
         Self {
@@ -429,7 +413,7 @@ impl Description
         let mut summary = None;
 
         let inner = match root {
-            Event::Start(data) | Event::Empty(data) => data,
+            Event::Start(data) => data,
             _ => panic!("unexpected event: {:?}", root),
         };
 
@@ -443,21 +427,19 @@ impl Description
 
         let mut content = None;
 
-        if let Event::Start(_) = root {
-            let mut buf = Vec::new();
-            loop {
-                match reader.read_event_into(&mut buf).unwrap() {
-                    Event::Text(ref data) => {
-                        content
-                            .get_or_insert(String::new())
-                            .push_str(str::from_utf8(&data).unwrap());
-                    }
-                    Event::End(ref data) if data.name().as_ref() == b"description" => break,
-                    Event::Comment(_) => {}
-                    event => panic!("unexpected event: {:?}", event),
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf).unwrap() {
+                Event::Text(ref data) => {
+                    content
+                        .get_or_insert(String::new())
+                        .push_str(str::from_utf8(&data).unwrap());
                 }
-                buf.clear();
+                Event::End(ref data) if data.name().as_ref() == b"description" => break,
+                Event::Comment(_) => {}
+                event => panic!("unexpected event: {:?}", event),
             }
+            buf.clear();
         }
 
         Self {

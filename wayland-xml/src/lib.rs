@@ -11,6 +11,7 @@ pub fn from_reader<R: BufRead>(reader: R) -> Vec<dtd::Protocol>
     let mut reader = Reader::from_reader(reader);
     reader.config_mut().trim_text(true);
     reader.config_mut().enable_all_checks(true);
+    reader.config_mut().expand_empty_elements = true;
 
     let mut protocols = Vec::new();
 
