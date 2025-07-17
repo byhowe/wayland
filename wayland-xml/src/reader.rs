@@ -6,15 +6,15 @@ use quick_xml::escape::resolve_xml_entity;
 use quick_xml::events::Event;
 use quick_xml::events::attributes::Attribute;
 
-use crate::dtd::Arg;
-use crate::dtd::Copyright;
-use crate::dtd::Description;
-use crate::dtd::Entry;
-use crate::dtd::Enum;
-use crate::dtd::Interface;
-use crate::dtd::Message;
-use crate::dtd::Protocol;
-use crate::dtd::Type;
+use crate::schema::Arg;
+use crate::schema::Copyright;
+use crate::schema::Description;
+use crate::schema::Entry;
+use crate::schema::Enum;
+use crate::schema::Interface;
+use crate::schema::Message;
+use crate::schema::Protocol;
+use crate::schema::Type;
 
 impl Protocol
 {

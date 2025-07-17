@@ -5,12 +5,12 @@ use quote::ToTokens;
 use quote::format_ident;
 use quote::quote;
 use syn::Ident;
-use wayland_xml::dtd;
+use wayland_xml::schema;
 
 use crate::util::snake_to_camel;
 
 #[derive(Debug, Clone)]
-pub struct Protocol<'a>(pub &'a dtd::Protocol);
+pub struct Protocol<'a>(pub &'a schema::Protocol);
 
 impl Protocol<'_>
 {
@@ -46,10 +46,10 @@ impl ToTokens for Protocol<'_>
 }
 
 #[derive(Debug, Clone)]
-pub struct Copyright(pub dtd::Copyright);
+pub struct Copyright(pub schema::Copyright);
 
 #[derive(Debug, Clone)]
-pub struct Interface<'a>(pub &'a dtd::Interface);
+pub struct Interface<'a>(pub &'a schema::Interface);
 
 impl Interface<'_>
 {
@@ -82,10 +82,10 @@ impl ToTokens for Interface<'_>
 }
 
 #[derive(Debug, Clone)]
-pub struct Message(pub dtd::Message);
+pub struct Message(pub schema::Message);
 
 #[derive(Debug, Clone)]
-pub struct Enum<'a>(pub &'a dtd::Enum);
+pub struct Enum<'a>(pub &'a schema::Enum);
 
 impl Enum<'_>
 {
@@ -161,7 +161,7 @@ impl ToTokens for Enum<'_>
 }
 
 #[derive(Debug, Clone)]
-pub struct Entry<'a>(pub &'a dtd::Entry);
+pub struct Entry<'a>(pub &'a schema::Entry);
 
 impl Entry<'_>
 {
@@ -186,7 +186,7 @@ impl Entry<'_>
 }
 
 #[derive(Debug, Clone)]
-pub struct Arg(pub dtd::Arg);
+pub struct Arg(pub schema::Arg);
 
 #[derive(Debug, Clone)]
-pub struct Description(pub dtd::Description);
+pub struct Description(pub schema::Description);
