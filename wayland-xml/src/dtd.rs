@@ -30,7 +30,7 @@ pub struct Interface
 pub struct Message
 {
     pub name: String,
-    pub kind: Option<Type>, // type
+    pub destructor: bool,
     pub since: i32,
     pub deprecated_since: Option<String>,
     pub description: Option<Description>,
@@ -88,6 +88,4 @@ pub enum Type
     NewId,
     Array,
     Fd,
-
-    Destructor,
 }

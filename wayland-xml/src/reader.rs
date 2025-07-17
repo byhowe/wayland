@@ -184,7 +184,7 @@ impl Message
     pub fn from_reader<R: BufRead>(reader: &mut Reader<R>, root: &Event<'_>) -> Self
     {
         let mut name = None;
-        let mut kind = None;
+        let mut destructor = false;
         let mut since = 1;
         let mut deprecated_since = None;
 
@@ -197,7 +197,12 @@ impl Message
             let Attribute { key: k, value: v } = attr;
             match k.0 {
                 b"name" => name = Some(str::from_utf8(&v).unwrap().to_string()),
-                b"type" => kind = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
+                b"type" => {
+                    destructor = match v.as_ref() {
+                        b"destructor" => true,
+                        _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
+                    }
+                }
                 b"since" => since = str::from_utf8(&v).unwrap().parse().unwrap(),
                 b"deprecated-since" => {
                     deprecated_since = Some(str::from_utf8(&v).unwrap().to_string())
@@ -228,7 +233,7 @@ impl Message
 
         Self {
             name: name.unwrap(),
-            kind,
+            destructor,
             since,
             deprecated_since,
             description,
@@ -464,9 +469,6 @@ impl FromStr for Type
             "new_id" => Ok(Type::NewId),
             "array" => Ok(Type::Array),
             "fd" => Ok(Type::Fd),
-
-            "destructor" => Ok(Type::Destructor),
-
             _ => Err(format!("unknown type: {}", s)),
         }
     }
