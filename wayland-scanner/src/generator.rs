@@ -106,53 +106,74 @@ impl ToTokens for Enum<'_>
     {
         let enum_name = self.name();
 
-        let variants = self
-            .entries()
-            .map(|entry| {
-                let name = entry.name();
-                let value = entry.value();
+        let entries = self.entries().map(|entry| {
+            let name = entry.name();
+            let value = entry.value();
 
-                quote! {
-                    #name = #value
+            quote! { #name = #value }
+        });
+
+        match self.0.bitfield {
+            true => quote! {
+                bitflags::bitflags! {
+                    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+                    pub struct #enum_name: u32 {
+                        #(const #entries;)*
+                    }
                 }
-            });
-
-        let try_from_arms = self
-            .entries()
-            .map(|entry| {
-                let name = entry.name();
-                let value = entry.value();
-
-                quote! {
-                    #value => Ok(#enum_name::#name)
+            },
+            false => quote! {
+                #[repr(u32)]
+                #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+                #[non_exhaustive]
+                pub enum #enum_name {
+                    #(#entries,)*
                 }
-            });
-
-        quote! {
-            #[repr(u32)]
-            #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-            #[non_exhaustive]
-            pub enum #enum_name {
-                #(#variants,)*
-            }
+            },
         }
         .to_tokens(tokens);
 
-        quote! {
-            impl ::core::convert::TryFrom<u32> for #enum_name {
-                type Error = ();
+        match self.0.bitfield {
+            true => quote! {
+                impl ::core::convert::TryFrom<u32> for #enum_name {
+                    type Error = ();
 
-                fn try_from(value: u32) -> ::core::result::Result<Self, Self::Error> {
-                    match value {
-                        #(#try_from_arms,)*
-                        _ => Err(()),
+                    fn try_from(value: u32) -> ::core::result::Result<Self, Self::Error> {
+                        #enum_name::from_bits(value).ok_or(())
                     }
                 }
-            }
 
-            impl ::core::convert::From<#enum_name> for u32 {
-                fn from(value: #enum_name) -> Self {
-                    value as Self
+                impl ::core::convert::From<#enum_name> for u32 {
+                    fn from(value: #enum_name) -> Self {
+                        value.bits()
+                    }
+                }
+            },
+            false => {
+                let try_from_arms = self.entries().map(|entry| {
+                    let name = entry.name();
+                    let value = entry.value();
+
+                    quote! { #value => Ok(#enum_name::#name) }
+                });
+
+                quote! {
+                    impl ::core::convert::TryFrom<u32> for #enum_name {
+                        type Error = ();
+
+                        fn try_from(value: u32) -> ::core::result::Result<Self, Self::Error> {
+                            match value {
+                                #(#try_from_arms,)*
+                                _ => Err(()),
+                            }
+                        }
+                    }
+
+                    impl ::core::convert::From<#enum_name> for u32 {
+                        fn from(value: #enum_name) -> Self {
+                            value as Self
+                        }
+                    }
                 }
             }
         }

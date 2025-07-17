@@ -3,8 +3,8 @@ use std::io::BufRead;
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
-pub mod schema;
 pub mod reader;
+pub mod schema;
 
 pub fn from_reader<R: BufRead>(reader: R) -> Vec<schema::Protocol>
 {
