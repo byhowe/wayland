@@ -22,7 +22,7 @@ fn main()
     let file = File::open(&path).unwrap();
     let result = panic::catch_unwind(|| {
         let protocols = from_reader(BufReader::new(file));
-        println!("{:#?}", protocols);
+        //println!("{:#?}", protocols);
     });
     if result.is_err() {
         println!("{:?}", path);

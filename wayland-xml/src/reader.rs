@@ -1,5 +1,4 @@
 use std::io::BufRead;
-use std::str::FromStr;
 
 use quick_xml::Reader;
 use quick_xml::escape::resolve_xml_entity;
@@ -358,7 +357,7 @@ impl Arg
         let mut typ = None;
         let mut summary = None;
         let mut interface = None;
-        let mut allow_null = false;
+        let mut allow_null = None;
         let mut enu = None;
 
         let inner = match root {
@@ -370,14 +369,14 @@ impl Arg
             let Attribute { key: k, value: v } = attr;
             match k.0 {
                 b"name" => name = Some(str::from_utf8(&v).unwrap().to_string()),
-                b"type" => typ = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
+                b"type" => typ = Some(v),
                 b"summary" => summary = Some(str::from_utf8(&v).unwrap().to_string()),
                 b"interface" => interface = Some(str::from_utf8(&v).unwrap().to_string()),
                 b"allow-null" => {
-                    allow_null = match v.as_ref() {
+                    allow_null = Some(match v.as_ref() {
                         b"true" => true,
                         _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
-                    }
+                    })
                 }
                 b"enum" => enu = Some(str::from_utf8(&v).unwrap().to_string()),
                 _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
@@ -401,12 +400,58 @@ impl Arg
 
         Self {
             name: name.unwrap(),
-            typ: typ.unwrap(),
             summary,
-            interface,
-            allow_null,
-            enu,
             description,
+            typ: match typ.unwrap().as_ref() {
+                b"int" => {
+                    assert!(interface.is_none());
+                    assert!(allow_null.is_none());
+                    Type::Int { enu }
+                }
+                b"uint" => {
+                    assert!(interface.is_none());
+                    assert!(allow_null.is_none());
+                    Type::Uint { enu }
+                }
+                b"fixed" => {
+                    assert!(interface.is_none());
+                    assert!(enu.is_none());
+                    assert!(allow_null.is_none());
+                    Type::Fixed
+                }
+                b"string" => {
+                    assert!(interface.is_none());
+                    assert!(enu.is_none());
+                    Type::String {
+                        nullable: allow_null.unwrap_or(false),
+                    }
+                }
+                b"object" => {
+                    assert!(enu.is_none());
+                    Type::Object {
+                        interface,
+                        nullable: allow_null.unwrap_or(false),
+                    }
+                }
+                b"new_id" => {
+                    assert!(enu.is_none());
+                    assert!(allow_null.is_none());
+                    Type::NewId { interface }
+                }
+                b"array" => {
+                    assert!(interface.is_none());
+                    assert!(enu.is_none());
+                    assert!(allow_null.is_none());
+                    Type::Array
+                }
+                b"fd" => {
+                    assert!(interface.is_none());
+                    assert!(enu.is_none());
+                    assert!(allow_null.is_none());
+                    Type::Fd
+                }
+                t => panic!("unexpected type: {}", str::from_utf8(t).unwrap()),
+            },
         }
     }
 }
@@ -450,26 +495,6 @@ impl Description
         Self {
             summary: summary.unwrap(),
             content,
-        }
-    }
-}
-
-impl FromStr for Type
-{
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err>
-    {
-        match s {
-            "int" => Ok(Type::Int),
-            "uint" => Ok(Type::Uint),
-            "fixed" => Ok(Type::Fixed),
-            "string" => Ok(Type::String),
-            "object" => Ok(Type::Object),
-            "new_id" => Ok(Type::NewId),
-            "array" => Ok(Type::Array),
-            "fd" => Ok(Type::Fd),
-            _ => Err(format!("unknown type: {}", s)),
         }
     }
 }

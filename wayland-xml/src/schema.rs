@@ -62,12 +62,9 @@ pub struct Entry
 pub struct Arg
 {
     pub name: String,
-    pub typ: Type,
     pub summary: Option<String>,
-    pub interface: Option<String>,
-    pub allow_null: bool,
-    pub enu: Option<String>,
     pub description: Option<Description>,
+    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -80,12 +77,28 @@ pub struct Description
 #[derive(Debug, Clone)]
 pub enum Type
 {
-    Int,
-    Uint,
+    Int
+    {
+        enu: Option<String>,
+    },
+    Uint
+    {
+        enu: Option<String>,
+    },
     Fixed,
-    String,
-    Object,
-    NewId,
+    String
+    {
+        nullable: bool,
+    },
+    Object
+    {
+        interface: Option<String>,
+        nullable: bool,
+    },
+    NewId
+    {
+        interface: Option<String>,
+    },
     Array,
     Fd,
 }
