@@ -14,17 +14,9 @@ pub struct Protocol<'a>(pub &'a schema::Protocol);
 
 impl Protocol<'_>
 {
-    pub fn name(&self) -> Ident
+    fn name(&self) -> Ident
     {
         format_ident!("{}", self.0.name)
-    }
-
-    pub fn interfaces(&self) -> impl Iterator<Item = Interface<'_>>
-    {
-        self.0
-            .interfaces
-            .iter()
-            .map(|interface| Interface(interface))
     }
 }
 
@@ -34,9 +26,10 @@ impl ToTokens for Protocol<'_>
     {
         let protocol_name = self.name();
 
-        let interfaces = self.interfaces().map(|interface| quote! { #interface });
+        let interface_modules = self.0.interfaces.iter().map(|iface| InterfaceModule(iface));
+        let interface_structs = self.0.interfaces.iter().map(|iface| InterfaceStruct(iface));
 
-        let meta_interfaces = self.interfaces().map(|interface| {
+        let meta_interfaces = interface_structs.clone().map(|interface| {
             let interface_name = interface.name();
             quote! { #interface_name::META }
         });
@@ -45,7 +38,11 @@ impl ToTokens for Protocol<'_>
 
         quote! {
             pub mod #protocol_name {
-                #(#interfaces)*
+                #(#interface_structs)*
+
+                pub mod interfaces {
+                    #(#interface_modules)*
+                }
 
                 pub const META: ::wayland_core::meta::Protocol = ::wayland_core::meta::Protocol {
                     name: #meta_name,
@@ -63,41 +60,66 @@ impl ToTokens for Protocol<'_>
 pub struct Copyright(pub schema::Copyright);
 
 #[derive(Debug, Clone)]
-pub struct Interface<'a>(pub &'a schema::Interface);
+pub struct InterfaceModule<'a>(pub &'a schema::Interface);
 
-impl Interface<'_>
+impl InterfaceModule<'_>
 {
     fn name(&self) -> Ident
     {
         format_ident!("{}", self.0.name.trim_prefix("wl_"))
     }
-
-    fn enums(&self) -> impl Iterator<Item = Enum<'_>>
-    {
-        self.0.enums.iter().map(|enu| Enum(enu))
-    }
 }
 
-impl ToTokens for Interface<'_>
+impl ToTokens for InterfaceModule<'_>
 {
     fn to_tokens(&self, tokens: &mut TokenStream)
     {
         let interface_name = self.name();
 
-        let enums = self.enums().map(|enu| quote! { #enu });
-
-        let meta_enums = self.enums().map(|enu| {
-            let enum_name = enu.name();
-            quote! { #enum_name::META }
-        });
-
-        let meta_name = interface_name.to_string();
-        let meta_version = self.0.version;
+        let enums = self.0.enums.iter().map(|enu| Enum(enu));
 
         quote! {
             pub mod #interface_name {
                 #(#enums)*
+            }
+        }
+        .to_tokens(tokens);
+    }
+}
 
+#[derive(Debug, Clone)]
+pub struct InterfaceStruct<'a>(pub &'a schema::Interface);
+
+impl InterfaceStruct<'_>
+{
+    fn name(&self) -> Ident
+    {
+        format_ident!("{}", snake_to_camel(self.0.name.trim_prefix("wl_")))
+    }
+}
+
+impl ToTokens for InterfaceStruct<'_>
+{
+    fn to_tokens(&self, tokens: &mut TokenStream)
+    {
+        let struct_name = self.name();
+        let module_name = InterfaceModule(self.0).name();
+
+        let request_functions = self.0.requests.iter().map(|req| RequestFunction(req));
+
+        let meta_enums = self.0.enums.iter().map(|enu| Enum(enu)).map(|enu| {
+            let enum_name = enu.name();
+            quote! { interfaces::#module_name::#enum_name::META }
+        });
+
+        let meta_name = module_name.to_string();
+        let meta_version = self.0.version;
+
+        // TODO: Continue implementing the request functions
+        quote! {
+            pub struct #struct_name { }
+
+            impl #struct_name {
                 pub const META: ::wayland_core::meta::Interface = ::wayland_core::meta::Interface {
                     name: #meta_name,
                     version: #meta_version,
@@ -107,6 +129,8 @@ impl ToTokens for Interface<'_>
                         #(&#meta_enums,)*
                     ],
                 };
+
+                #(#request_functions)*
             }
         }
         .to_tokens(tokens);
@@ -114,26 +138,47 @@ impl ToTokens for Interface<'_>
 }
 
 #[derive(Debug, Clone)]
-pub struct Message<'a>(pub &'a schema::Message);
+pub struct RequestFunction<'a>(pub &'a schema::Message);
 
-impl Message<'_> {}
-
-impl ToTokens for Message<'_>
+impl RequestFunction<'_>
 {
-    fn to_tokens(&self, tokens: &mut TokenStream) {}
+    fn name(&self) -> Ident
+    {
+        if syn::parse_str::<Ident>(&self.0.name).is_err() {
+            format_ident!("{}_", self.0.name)
+        } else {
+            format_ident!("{}", self.0.name)
+        }
+    }
 }
+
+impl ToTokens for RequestFunction<'_>
+{
+    fn to_tokens(&self, tokens: &mut TokenStream)
+    {
+        let request_name = self.name();
+
+        quote! {
+            pub fn #request_name(&self) {}
+        }
+        .to_tokens(tokens);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Event<'a>(pub &'a schema::Message);
 
 #[derive(Debug, Clone)]
 pub struct Enum<'a>(pub &'a schema::Enum);
 
 impl Enum<'_>
 {
-    pub fn name(&self) -> Ident
+    fn name(&self) -> Ident
     {
         format_ident!("{}", snake_to_camel(&self.0.name))
     }
 
-    pub fn entries(&self) -> impl Iterator<Item = Entry<'_>>
+    fn entries(&self) -> impl Iterator<Item = Entry<'_>>
     {
         self.0.entries.iter().map(|entry| Entry(entry))
     }
@@ -256,7 +301,7 @@ pub struct Entry<'a>(pub &'a schema::Entry);
 
 impl Entry<'_>
 {
-    pub fn name(&self) -> Ident
+    fn name(&self) -> Ident
     {
         // NOTE: Parsing as Ident using syn allows us to check if the string contains a
         // rust keyword so that we can add a prefix to it.
@@ -270,7 +315,7 @@ impl Entry<'_>
         }
     }
 
-    pub fn value(&self) -> TokenStream
+    fn value(&self) -> TokenStream
     {
         self.0.value.parse::<TokenStream>().unwrap()
     }
