@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "wayland-core",
     "wayland-scanner",
     "wayland-client",
     "wayland-xml",

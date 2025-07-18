@@ -36,9 +36,23 @@ impl ToTokens for Protocol<'_>
 
         let interfaces = self.interfaces().map(|interface| quote! { #interface });
 
+        let meta_interfaces = self.interfaces().map(|interface| {
+            let interface_name = interface.name();
+            quote! { #interface_name::META }
+        });
+
+        let meta_name = protocol_name.to_string();
+
         quote! {
             pub mod #protocol_name {
                 #(#interfaces)*
+
+                pub const META: ::wayland_core::meta::Protocol = ::wayland_core::meta::Protocol {
+                    name: #meta_name,
+                    interfaces: &[
+                        #(&#meta_interfaces,)*
+                    ],
+                };
             }
         }
         .to_tokens(tokens);
@@ -72,9 +86,27 @@ impl ToTokens for Interface<'_>
 
         let enums = self.enums().map(|enu| quote! { #enu });
 
+        let meta_enums = self.enums().map(|enu| {
+            let enum_name = enu.name();
+            quote! { #enum_name::META }
+        });
+
+        let meta_name = interface_name.to_string();
+        let meta_version = self.0.version;
+
         quote! {
             pub mod #interface_name {
                 #(#enums)*
+
+                pub const META: ::wayland_core::meta::Interface = ::wayland_core::meta::Interface {
+                    name: #meta_name,
+                    version: #meta_version,
+                    requests: &[], // TODO: Make sure to fill these
+                    events: &[],
+                    enums: &[
+                        #(&#meta_enums,)*
+                    ],
+                };
             }
         }
         .to_tokens(tokens);
@@ -82,7 +114,14 @@ impl ToTokens for Interface<'_>
 }
 
 #[derive(Debug, Clone)]
-pub struct Message(pub schema::Message);
+pub struct Message<'a>(pub &'a schema::Message);
+
+impl Message<'_> {}
+
+impl ToTokens for Message<'_>
+{
+    fn to_tokens(&self, tokens: &mut TokenStream) {}
+}
 
 #[derive(Debug, Clone)]
 pub struct Enum<'a>(pub &'a schema::Enum);
@@ -121,20 +160,7 @@ impl ToTokens for Enum<'_>
                         #(const #entries;)*
                     }
                 }
-            },
-            false => quote! {
-                #[repr(u32)]
-                #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-                #[non_exhaustive]
-                pub enum #enum_name {
-                    #(#entries,)*
-                }
-            },
-        }
-        .to_tokens(tokens);
 
-        match self.0.bitfield {
-            true => quote! {
                 impl ::core::convert::TryFrom<u32> for #enum_name {
                     type Error = ();
 
@@ -158,6 +184,13 @@ impl ToTokens for Enum<'_>
                 });
 
                 quote! {
+                    #[repr(u32)]
+                    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+                    #[non_exhaustive]
+                    pub enum #enum_name {
+                        #(#entries,)*
+                    }
+
                     impl ::core::convert::TryFrom<u32> for #enum_name {
                         type Error = ();
 
@@ -175,6 +208,43 @@ impl ToTokens for Enum<'_>
                         }
                     }
                 }
+            }
+        }
+        .to_tokens(tokens);
+
+        let meta_entries = self.entries().map(|entry| {
+            let entry_name = entry.name().to_string();
+            let entry_value = entry.value().to_string();
+            let entry_since = entry.0.since;
+            let deprecated_since = match entry.0.deprecated_since {
+                Some(v) => quote! { Some(#v) },
+                None => quote! { None },
+            };
+
+            quote! {
+                ::wayland_core::meta::Entry {
+                    name: #entry_name,
+                    value: #entry_value,
+                    since: #entry_since,
+                    deprecated_since: #deprecated_since,
+                }
+            }
+        });
+
+        let meta_name = enum_name.to_string();
+        let meta_since = self.0.since;
+        let meta_bitfield = self.0.bitfield;
+
+        quote! {
+            impl #enum_name {
+                pub const META: ::wayland_core::meta::Enum = ::wayland_core::meta::Enum {
+                    name: #meta_name,
+                    since: #meta_since,
+                    bitfield: #meta_bitfield,
+                    entries: &[
+                        #(#meta_entries,)*
+                    ],
+                };
             }
         }
         .to_tokens(tokens);

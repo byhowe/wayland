@@ -120,8 +120,13 @@ dependencies = [
  "bitflags",
  "rustix",
  "thiserror",
+ "wayland-core",
  "wayland-scanner",
 ]
+
+[[package]]
+name = "wayland-core"
+version = "0.1.0"
 
 [[package]]
 name = "wayland-scanner"
