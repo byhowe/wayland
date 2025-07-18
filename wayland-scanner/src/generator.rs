@@ -5,6 +5,7 @@ use quote::ToTokens;
 use quote::format_ident;
 use quote::quote;
 use syn::Ident;
+use syn::Path;
 use wayland_xml::schema;
 
 use crate::util::snake_to_camel;
@@ -26,23 +27,25 @@ impl ToTokens for Protocol<'_>
     {
         let protocol_name = self.name();
 
-        let interface_modules = self.0.interfaces.iter().map(|iface| InterfaceModule(iface));
-        let interface_structs = self.0.interfaces.iter().map(|iface| InterfaceStruct(iface));
+        let interfaces = self
+            .0
+            .interfaces
+            .iter()
+            .map(|iface| (InterfaceModule(iface), InterfaceStruct(iface)));
+        let interface_modules = interfaces.clone().map(|(iface, _)| iface);
 
-        let meta_interfaces = interface_structs.clone().map(|interface| {
-            let interface_name = interface.name();
-            quote! { #interface_name::META }
+        let meta_interfaces = interfaces.map(|(module, struc)| {
+            let module_name = module.name();
+            let struct_name = struc.name();
+
+            quote! { #module_name::#struct_name::META }
         });
 
         let meta_name = protocol_name.to_string();
 
         quote! {
             pub mod #protocol_name {
-                #(#interface_structs)*
-
-                pub mod interfaces {
-                    #(#interface_modules)*
-                }
+                #(#interface_modules)*
 
                 pub const META: ::wayland_core::meta::Protocol = ::wayland_core::meta::Protocol {
                     name: #meta_name,
@@ -64,9 +67,14 @@ pub struct InterfaceModule<'a>(pub &'a schema::Interface);
 
 impl InterfaceModule<'_>
 {
+    fn format_name<S: AsRef<str>>(wl_name: S) -> Ident
+    {
+        format_ident!("{}", wl_name.as_ref().trim_prefix("wl_"))
+    }
+
     fn name(&self) -> Ident
     {
-        format_ident!("{}", self.0.name.trim_prefix("wl_"))
+        Self::format_name(&self.0.name)
     }
 }
 
@@ -76,11 +84,14 @@ impl ToTokens for InterfaceModule<'_>
     {
         let interface_name = self.name();
 
+        let interface_struct = InterfaceStruct(self.0);
         let enums = self.0.enums.iter().map(|enu| Enum(enu));
 
         quote! {
             pub mod #interface_name {
                 #(#enums)*
+
+                #interface_struct
             }
         }
         .to_tokens(tokens);
@@ -92,9 +103,24 @@ pub struct InterfaceStruct<'a>(pub &'a schema::Interface);
 
 impl InterfaceStruct<'_>
 {
+    fn format_name<S: AsRef<str>>(wl_name: S) -> Ident
+    {
+        format_ident!("{}", snake_to_camel(wl_name.as_ref().trim_prefix("wl_")))
+    }
+
+    fn resolve_path<S: AsRef<str>>(wl_path: S) -> Path
+    {
+        let path = format!(
+            "super::{}::{}",
+            InterfaceModule::format_name(wl_path.as_ref()),
+            InterfaceStruct::format_name(wl_path.as_ref())
+        );
+        syn::parse_str(&path).unwrap()
+    }
+
     fn name(&self) -> Ident
     {
-        format_ident!("{}", snake_to_camel(self.0.name.trim_prefix("wl_")))
+        Self::format_name(&self.0.name)
     }
 }
 
@@ -109,7 +135,7 @@ impl ToTokens for InterfaceStruct<'_>
 
         let meta_enums = self.0.enums.iter().map(|enu| Enum(enu)).map(|enu| {
             let enum_name = enu.name();
-            quote! { interfaces::#module_name::#enum_name::META }
+            quote! { #enum_name::META }
         });
 
         let meta_name = module_name.to_string();
@@ -158,8 +184,13 @@ impl ToTokens for RequestFunction<'_>
     {
         let request_name = self.name();
 
+        let request_args = self.0.args.iter().map(|arg| Arg(arg));
+
         quote! {
-            pub fn #request_name(&self) {}
+            pub fn #request_name(
+                &self,
+                #(#request_args,)*
+            ) {}
         }
         .to_tokens(tokens);
     }
@@ -173,9 +204,28 @@ pub struct Enum<'a>(pub &'a schema::Enum);
 
 impl Enum<'_>
 {
+    fn format_name<S: AsRef<str>>(wl_name: S) -> Ident
+    {
+        format_ident!("{}", snake_to_camel(wl_name.as_ref()))
+    }
+
+    fn resolve_path<S: AsRef<str>>(wl_path: S) -> Path
+    {
+        let mut parts = wl_path.as_ref().split('.').rev();
+        let enum_name = parts.next().map(Self::format_name).unwrap();
+        let path = match parts.next() {
+            Some(iface) => {
+                let iface_name = InterfaceModule::format_name(iface);
+                format!("super::{}::{}", iface_name, enum_name)
+            }
+            None => format!("{}", enum_name),
+        };
+        syn::parse_str(&path).unwrap()
+    }
+
     fn name(&self) -> Ident
     {
-        format_ident!("{}", snake_to_camel(&self.0.name))
+        Self::format_name(&self.0.name)
     }
 
     fn entries(&self) -> impl Iterator<Item = Entry<'_>>
@@ -322,7 +372,74 @@ impl Entry<'_>
 }
 
 #[derive(Debug, Clone)]
-pub struct Arg(pub schema::Arg);
+pub struct Arg<'a>(pub &'a schema::Arg);
+
+impl Arg<'_>
+{
+    fn name(&self) -> Ident
+    {
+        format_ident!("{}", self.0.name)
+    }
+
+    fn typ(&self) -> Type<'_>
+    {
+        Type(&self.0.typ)
+    }
+}
+
+impl ToTokens for Arg<'_>
+{
+    fn to_tokens(&self, tokens: &mut TokenStream)
+    {
+        let arg_name = self.name();
+        let arg_type = self.typ();
+
+        quote! { #arg_name: #arg_type }.to_tokens(tokens);
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Description(pub schema::Description);
+
+#[derive(Debug, Clone)]
+pub struct Type<'a>(pub &'a schema::Type);
+
+impl ToTokens for Type<'_>
+{
+    fn to_tokens(&self, tokens: &mut TokenStream)
+    {
+        match self.0 {
+            schema::Type::Int { enu: None } => quote! { i32 },
+            schema::Type::Uint { enu: None } => quote! { u32 },
+            schema::Type::Int { enu: Some(enu) } | schema::Type::Uint { enu: Some(enu) } => {
+                let enum_path = Enum::resolve_path(&enu);
+                quote! { #enum_path }
+            }
+            schema::Type::Fixed => quote! { f64 },
+            schema::Type::String { nullable: false } => quote! { &str },
+            schema::Type::String { nullable: true } => quote! { Option<&str> },
+            schema::Type::Object {
+                interface,
+                nullable,
+            } => {
+                let interface_path = interface
+                    .as_ref()
+                    .map(InterfaceStruct::resolve_path)
+                    .map(|path| quote! { #path })
+                    .unwrap_or(quote! { ::wayland_core::Object });
+                match nullable {
+                    true => quote! { Option<#interface_path> },
+                    false => quote! { #interface_path },
+                }
+            }
+            schema::Type::NewId { interface } => interface
+                .as_ref()
+                .map(InterfaceStruct::resolve_path)
+                .map(|path| quote! { &mut #path })
+                .unwrap_or(quote! { &mut ::wayland_core::Object }),
+            schema::Type::Array => quote! { ::wayland_core::Array },
+            schema::Type::Fd => quote! { ::wayland_core::Fd },
+        }
+        .to_tokens(tokens);
+    }
+}
