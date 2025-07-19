@@ -5,4 +5,7 @@ members = [
     "wayland-scanner",
     "wayland-client",
     "wayland-xml",
+
+    # Testing ground.
+    "wayland-test",
 ]
