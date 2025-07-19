@@ -45,7 +45,11 @@ impl ToTokens for Protocol<'_>
 
         quote! {
             pub mod #protocol_name {
+                // refers to the current protocol module
+                use super::#protocol_name as __protocol_root;
+
                 #(#interface_modules)*
+
                 #(#[doc(inline)] pub use #interface_paths_x;)*
 
                 pub const META: ::wayland_core::meta::Protocol = ::wayland_core::meta::Protocol {
@@ -93,13 +97,23 @@ impl ToTokens for InterfaceModule<'_>
 
         quote! {
             pub mod #interface_name {
+                use super::__protocol_root;
+                // refers to the current protocol intercace
+                use super::#interface_name as __interface_root;
+
                 #(#enums)*
 
                 pub mod request {
+                    use super::__protocol_root;
+                    use super::__interface_root;
+
                     #(#requests)*
                 }
 
                 pub mod event {
+                    use super::__protocol_root;
+                    use super::__interface_root;
+
                     #(#events)*
                 }
 
@@ -123,7 +137,7 @@ impl InterfaceStruct<'_>
     fn resolve_path<S: AsRef<str>>(wl_path: S) -> Path
     {
         let path = format!(
-            "super::{}::{}",
+            "__protocol_root::{}::{}",
             InterfaceModule::format_name(wl_path.as_ref()),
             InterfaceStruct::format_name(wl_path.as_ref())
         );
@@ -155,6 +169,7 @@ impl ToTokens for InterfaceStruct<'_>
 
         // TODO: Continue implementing the request functions
         quote! {
+            #[derive(Debug, Clone)]
             pub struct #struct_name { }
 
             impl #struct_name {
@@ -174,7 +189,6 @@ impl ToTokens for InterfaceStruct<'_>
         .to_tokens(tokens);
     }
 }
-
 #[derive(Debug, Clone)]
 pub struct RequestFunction<'a>(pub &'a schema::Message);
 
@@ -265,9 +279,9 @@ impl Enum<'_>
         let path = match parts.next() {
             Some(iface) => {
                 let iface_name = InterfaceModule::format_name(iface);
-                format!("super::{}::{}", iface_name, enum_name)
+                format!("__protocol_root::{}::{}", iface_name, enum_name)
             }
-            None => format!("{}", enum_name),
+            None => format!("__interface_root::{}", enum_name),
         };
         syn::parse_str(&path).unwrap()
     }
@@ -458,39 +472,29 @@ impl ToTokens for Type<'_>
     fn to_tokens(&self, tokens: &mut TokenStream)
     {
         match self.0 {
-            // schema::Type::Int { enu: None } => quote! { i32 },
-            // schema::Type::Uint { enu: None } => quote! { u32 },
-            // schema::Type::Int { enu: Some(enu) } | schema::Type::Uint { enu: Some(enu) } => {
-            //     let enum_path = Enum::resolve_path(&enu);
-            //     quote! { #enum_path }
-            // }
-            schema::Type::Int { enu: _ } => quote! { i32 },
-            schema::Type::Uint { enu: _ } => quote! { u32 },
+            schema::Type::Int { enu: None } => quote! { i32 },
+            schema::Type::Uint { enu: None } => quote! { u32 },
+            schema::Type::Int { enu: Some(enu) } | schema::Type::Uint { enu: Some(enu) } => {
+                let enum_path = Enum::resolve_path(&enu);
+                quote! { #enum_path }
+            }
             schema::Type::Fixed => quote! { ::wayland_core::Fixed },
             schema::Type::String { nullable: false } => quote! { String },
             schema::Type::String { nullable: true } => quote! { Option<String> },
-            // schema::Type::Object {
-            //     interface,
-            //     nullable,
-            // } => {
-            //     let interface_path = interface
-            //         .as_ref()
-            //         .map(InterfaceStruct::resolve_path)
-            //         .map(|path| quote! { #path })
-            //         .unwrap_or(quote! { ::wayland_core::Object });
-            //     match nullable {
-            //         true => quote! { Option<#interface_path> },
-            //         false => quote! { #interface_path },
-            //     }
-            // }
             schema::Type::Object {
-                nullable: false,
-                interface: _,
-            } => quote! { ::wayland_core::Object },
-            schema::Type::Object {
-                nullable: true,
-                interface: _,
-            } => quote! { Option<::wayland_core::Object> },
+                interface,
+                nullable,
+            } => {
+                let interface_path = interface
+                    .as_ref()
+                    .map(InterfaceStruct::resolve_path)
+                    .map(|path| quote! { #path })
+                    .unwrap_or(quote! { ::wayland_core::Object });
+                match nullable {
+                    true => quote! { Option<#interface_path> },
+                    false => quote! { #interface_path },
+                }
+            }
             // TODO: find a way to handle new_id
             // schema::Type::NewId { interface } => interface
             //     .as_ref()
