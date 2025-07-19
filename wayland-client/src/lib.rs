@@ -15,7 +15,7 @@ pub mod protocol
 
 pub struct Connection
 {
-    stream: UnixStream,
+    pub stream: UnixStream,
 }
 
 impl Connection
