@@ -32,25 +32,26 @@ impl ToTokens for Protocol<'_>
             .interfaces
             .iter()
             .map(|iface| (InterfaceModule(iface), InterfaceStruct(iface)));
-        let interface_modules = interfaces.clone().map(|(iface, _)| iface);
 
-        let meta_interfaces = interfaces.map(|(module, struc)| {
-            let module_name = module.name();
-            let struct_name = struc.name();
+        let interface_modules = interfaces.clone().map(|(iface_module, _)| iface_module);
 
-            quote! { #module_name::#struct_name::META }
-        });
+        let interface_paths_x = interfaces
+            .clone()
+            .map(|(iface_module, iface_struct)| (iface_module.name(), iface_struct.name()))
+            .map(|(iface_module, iface_struct)| quote! { #iface_module::#iface_struct });
+        let interface_paths_y = interface_paths_x.clone();
 
         let meta_name = protocol_name.to_string();
 
         quote! {
             pub mod #protocol_name {
                 #(#interface_modules)*
+                #(#[doc(inline)] pub use #interface_paths_x;)*
 
                 pub const META: ::wayland_core::meta::Protocol = ::wayland_core::meta::Protocol {
                     name: #meta_name,
                     interfaces: &[
-                        #(&#meta_interfaces,)*
+                        #(&#interface_paths_y::META,)*
                     ],
                 };
             }
