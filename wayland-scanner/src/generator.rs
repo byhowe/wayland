@@ -245,6 +245,9 @@ impl ToTokens for MessageStruct<'_>
         let message_args = self.0.args.iter().map(|arg| Arg(arg));
         let message_opcode = self.0.opcode;
 
+        let arg_sizes = self.0.args.iter().map(|arg| ArgSize(arg));
+        let no_arg_size = arg_sizes.is_empty().then_some(quote! { 0usize });
+
         quote! {
             #[derive(Debug, Clone)]
             pub struct #message_name {
@@ -253,6 +256,11 @@ impl ToTokens for MessageStruct<'_>
 
             impl #message_name {
                 pub const OPCODE: u16 = #message_opcode;
+
+                pub const fn size(&self) -> usize {
+                    0usize + #no_arg_size
+                    #(#arg_sizes)+*
+                }
             }
         }
         .to_tokens(tokens);
@@ -458,6 +466,46 @@ impl ToTokens for Arg<'_>
         let arg_type = self.typ();
 
         quote! { #arg_name: #arg_type }.to_tokens(tokens);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ArgSize<'a>(pub &'a schema::Arg);
+
+impl ToTokens for ArgSize<'_>
+{
+    fn to_tokens(&self, tokens: &mut TokenStream)
+    {
+        let arg_name = Arg(self.0).name();
+
+        match self.0.typ {
+            schema::Type::Int { enu: _ }
+            | schema::Type::Uint { enu: _ }
+            | schema::Type::Fixed
+            | schema::Type::Object {
+                interface: _,
+                nullable: _,
+            }
+            | schema::Type::NewId { interface: _ } => quote! { 4usize },
+            schema::Type::Fd => quote! { 0usize }, // fd occupies no space on the main transport
+            schema::Type::String { nullable: false } => quote! { {
+                let len = self.#arg_name.len() + 1; // +1 for the null byte
+                (len + ::core::mem::align_of::<u32>() - 1) & !(core::mem::align_of::<u32>() - 1) + 4usize
+            } }, // TODO: implement
+            schema::Type::String { nullable: true } => quote! {
+                {
+                    match &self.#arg_name {
+                        None => 0usize,
+                        Some(arg) => {
+                            let len = arg.len() + 1; // +1 for the null byte
+                            (len + ::core::mem::align_of::<u32>() - 1) & !(core::mem::align_of::<u32>() - 1)
+                        },
+                    }
+                } + 4usize
+            },
+            schema::Type::Array => quote! { { unimplemented!() as usize } }, // TODO: implement
+        }
+        .to_tokens(tokens);
     }
 }
 

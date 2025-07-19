@@ -5,11 +5,13 @@ use std::alloc::alloc;
 use std::ffi::CStr;
 use std::io::Read;
 use std::io::Write;
+use std::mem;
 use std::mem::MaybeUninit;
-use std::mem::{self};
 
 use wayland_client::Connection;
 use wayland_client::protocol::wayland as wl;
+use wayland_client::protocol::wayland::display::request::GetRegistry;
+use wayland_client::protocol::wayland::display::request::Sync;
 
 fn main()
 {
@@ -20,15 +22,17 @@ fn main()
     let id_callback: u32 = 3; // wl_callback
 
     // -- GET REGISTRY --
-    let size: u16 = 12;
-    let opcode: u16 = wl::display::request::GetRegistry::OPCODE; // wl_display::get_registry
+    let opcode: u16 = GetRegistry::OPCODE; // wl_display::get_registry
 
-    let req = wl::display::request::GetRegistry {
+    let req = GetRegistry {
         registry: id_registry,
     };
 
-    let layout = Layout::from_size_align(size as usize, align_of::<u32>()).unwrap();
-    let mut buf = unsafe { Vec::from_raw_parts(alloc(layout), size as usize, size as usize) };
+    let size = req.size() + 8;
+    println!("get_registry size: {size}");
+
+    let layout = Layout::from_size_align(size, align_of::<u32>()).unwrap();
+    let mut buf = unsafe { Vec::from_raw_parts(alloc(layout), size, size) };
 
     unsafe {
         *buf.as_mut_ptr().add(0).cast() = id_display;
@@ -39,15 +43,17 @@ fn main()
     conn.stream.write_all(&mut buf).unwrap();
 
     // -- SYNC --
-    let size: u16 = 12;
-    let opcode: u16 = wl::display::request::Sync::OPCODE;
+    let opcode: u16 = Sync::OPCODE;
 
-    let req = wl::display::request::Sync {
+    let req = Sync {
         callback: id_callback,
     };
 
-    let layout = Layout::from_size_align(size as usize, align_of::<u32>()).unwrap();
-    let mut buf = unsafe { Vec::from_raw_parts(alloc(layout), size as usize, size as usize) };
+    let size = req.size() + 8;
+    println!("sync size: {size}");
+
+    let layout = Layout::from_size_align(size, align_of::<u32>()).unwrap();
+    let mut buf = unsafe { Vec::from_raw_parts(alloc(layout), size, size) };
 
     unsafe {
         *buf.as_mut_ptr().add(0).cast() = id_display;
@@ -73,8 +79,8 @@ fn main()
 
         conn.stream.read_exact(&mut buf).unwrap();
 
-        match (oid, opcode) {
-            (_, wl::registry::event::Global::OPCODE) if oid == id_registry => {
+        match opcode {
+            wl::registry::event::Global::OPCODE if oid == id_registry => {
                 let name: u32 = unsafe { *buf.as_ptr().add(0).cast() };
                 let string_size: u32 = unsafe { *buf.as_ptr().add(4).cast() };
                 assert_eq!(
@@ -94,7 +100,7 @@ fn main()
 
                 println!("{:?}", evt);
             }
-            (_, wl::callback::event::Done::OPCODE) if oid == id_callback => {
+            wl::callback::event::Done::OPCODE if oid == id_callback => {
                 let callback_data: u32 = unsafe { *buf.as_ptr().add(0).cast() };
 
                 let evt = wl::callback::event::Done { callback_data };
@@ -103,7 +109,7 @@ fn main()
 
                 break;
             }
-            _ => panic!("unexpected oid: {oid}, opcode: {opcode}"),
+            _ => eprintln!("unexpected oid: {oid}, opcode: {opcode}. ignoring..."),
         }
     }
 }

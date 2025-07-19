@@ -1,4 +1,5 @@
 #![feature(trim_prefix_suffix)]
+#![feature(exact_size_is_empty)]
 
 use std::env;
 use std::fs;
