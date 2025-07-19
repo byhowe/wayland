@@ -86,11 +86,22 @@ impl ToTokens for InterfaceModule<'_>
         let interface_name = self.name();
 
         let interface_struct = InterfaceStruct(self.0);
+
+        let requests = self.0.requests.iter().map(|msg| MessageStruct(msg));
+        let events = self.0.events.iter().map(|msg| MessageStruct(msg));
         let enums = self.0.enums.iter().map(|enu| Enum(enu));
 
         quote! {
             pub mod #interface_name {
                 #(#enums)*
+
+                pub mod request {
+                    #(#requests)*
+                }
+
+                pub mod event {
+                    #(#events)*
+                }
 
                 #interface_struct
             }
@@ -184,7 +195,6 @@ impl ToTokens for RequestFunction<'_>
     fn to_tokens(&self, tokens: &mut TokenStream)
     {
         let request_name = self.name();
-
         let request_args = self.0.args.iter().map(|arg| Arg(arg));
 
         quote! {
@@ -192,6 +202,44 @@ impl ToTokens for RequestFunction<'_>
                 &self,
                 #(#request_args,)*
             ) {}
+        }
+        .to_tokens(tokens);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MessageStruct<'a>(pub &'a schema::Message);
+
+impl MessageStruct<'_>
+{
+    fn format_name<S: AsRef<str>>(wl_name: S) -> Ident
+    {
+        format_ident!("{}", snake_to_camel(wl_name.as_ref()))
+    }
+
+    fn name(&self) -> Ident
+    {
+        Self::format_name(&self.0.name)
+    }
+}
+
+impl ToTokens for MessageStruct<'_>
+{
+    fn to_tokens(&self, tokens: &mut TokenStream)
+    {
+        let message_name = self.name();
+        let message_args = self.0.args.iter().map(|arg| Arg(arg));
+        let message_opcode = self.0.opcode;
+
+        quote! {
+            #[derive(Debug, Clone)]
+            pub struct #message_name {
+                #(pub #message_args,)*
+            }
+
+            impl #message_name {
+                pub const OPCODE: u16 = #message_opcode;
+            }
         }
         .to_tokens(tokens);
     }
@@ -410,34 +458,46 @@ impl ToTokens for Type<'_>
     fn to_tokens(&self, tokens: &mut TokenStream)
     {
         match self.0 {
-            schema::Type::Int { enu: None } => quote! { i32 },
-            schema::Type::Uint { enu: None } => quote! { u32 },
-            schema::Type::Int { enu: Some(enu) } | schema::Type::Uint { enu: Some(enu) } => {
-                let enum_path = Enum::resolve_path(&enu);
-                quote! { #enum_path }
-            }
-            schema::Type::Fixed => quote! { f64 },
-            schema::Type::String { nullable: false } => quote! { &str },
-            schema::Type::String { nullable: true } => quote! { Option<&str> },
+            // schema::Type::Int { enu: None } => quote! { i32 },
+            // schema::Type::Uint { enu: None } => quote! { u32 },
+            // schema::Type::Int { enu: Some(enu) } | schema::Type::Uint { enu: Some(enu) } => {
+            //     let enum_path = Enum::resolve_path(&enu);
+            //     quote! { #enum_path }
+            // }
+            schema::Type::Int { enu: _ } => quote! { i32 },
+            schema::Type::Uint { enu: _ } => quote! { u32 },
+            schema::Type::Fixed => quote! { ::wayland_core::Fixed },
+            schema::Type::String { nullable: false } => quote! { String },
+            schema::Type::String { nullable: true } => quote! { Option<String> },
+            // schema::Type::Object {
+            //     interface,
+            //     nullable,
+            // } => {
+            //     let interface_path = interface
+            //         .as_ref()
+            //         .map(InterfaceStruct::resolve_path)
+            //         .map(|path| quote! { #path })
+            //         .unwrap_or(quote! { ::wayland_core::Object });
+            //     match nullable {
+            //         true => quote! { Option<#interface_path> },
+            //         false => quote! { #interface_path },
+            //     }
+            // }
             schema::Type::Object {
-                interface,
-                nullable,
-            } => {
-                let interface_path = interface
-                    .as_ref()
-                    .map(InterfaceStruct::resolve_path)
-                    .map(|path| quote! { #path })
-                    .unwrap_or(quote! { ::wayland_core::Object });
-                match nullable {
-                    true => quote! { Option<#interface_path> },
-                    false => quote! { #interface_path },
-                }
-            }
-            schema::Type::NewId { interface } => interface
-                .as_ref()
-                .map(InterfaceStruct::resolve_path)
-                .map(|path| quote! { &mut #path })
-                .unwrap_or(quote! { &mut ::wayland_core::Object }),
+                nullable: false,
+                interface: _,
+            } => quote! { ::wayland_core::Object },
+            schema::Type::Object {
+                nullable: true,
+                interface: _,
+            } => quote! { Option<::wayland_core::Object> },
+            // TODO: find a way to handle new_id
+            // schema::Type::NewId { interface } => interface
+            //     .as_ref()
+            //     .map(InterfaceStruct::resolve_path)
+            //     .map(|path| quote! { &mut #path })
+            //     .unwrap_or(quote! { &mut ::wayland_core::Object }),
+            schema::Type::NewId { interface: _ } => quote! { ::wayland_core::Object },
             schema::Type::Array => quote! { ::wayland_core::Array },
             schema::Type::Fd => quote! { ::wayland_core::Fd },
         }

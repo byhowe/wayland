@@ -35,6 +35,7 @@ pub struct Message
     pub deprecated_since: Option<u32>,
     pub description: Option<Description>,
     pub args: Vec<Arg>,
+    pub opcode: u16,
 }
 
 #[derive(Debug, Clone)]

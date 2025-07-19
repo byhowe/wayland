@@ -162,6 +162,16 @@ impl Interface
             buf.clear();
         }
 
+        // opcodes are assigned in the order they appear in the xml file;
+        requests
+            .iter_mut()
+            .enumerate()
+            .for_each(|(opcode, req)| req.opcode = opcode as u16);
+        events
+            .iter_mut()
+            .enumerate()
+            .for_each(|(opcode, evt)| evt.opcode = opcode as u16);
+
         assert!(
             requests.len() + events.len() + enums.len() > 0,
             "at least one item must be present"
@@ -237,6 +247,8 @@ impl Message
             deprecated_since,
             description,
             args,
+            // We set the actual opcode in Interface::from_reader
+            opcode: u16::MAX,
         }
     }
 }
