@@ -11,7 +11,8 @@ pub mod protocol
 {
     pub mod wayland {
         use wayland_scanner::generate;
-        generate!("./wayland/protocol/wayland.xml");
+
+        generate!("../upstream/wayland/protocol/wayland.xml");
     }
 }
 

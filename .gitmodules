@@ -1,9 +1,9 @@
 [submodule "wayland-scanner/wayland"]
-	path = wayland-client/wayland
+	path = upstream/wayland
 	url = https://gitlab.freedesktop.org/wayland/wayland.git
 [submodule "wayland-protocols/wayland-protocols"]
-	path = wayland-protocols/wayland-protocols
+	path = upstream/wayland-protocols
 	url = https://gitlab.freedesktop.org/wayland/wayland-protocols.git
 [submodule "wayland-protocols-wlr/wlr-protocols"]
-	path = wayland-protocols-wlr/wlr-protocols
+	path = upstream/wlr-protocols
 	url = https://gitlab.freedesktop.org/wlroots/wlr-protocols.git
