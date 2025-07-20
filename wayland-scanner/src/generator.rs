@@ -254,7 +254,8 @@ impl ToTokens for MessageStruct<'_>
             impl #message_name {
                 pub const OPCODE: u16 = #message_opcode;
 
-                pub const fn size(&self) -> usize {
+                /// Calculates how many words (u32) are needed to send this message.
+                pub const fn count(&self) -> usize {
                     0usize + #no_arg_size
                     #(#arg_sizes)+*
                 }
@@ -483,23 +484,21 @@ impl ToTokens for ArgSize<'_>
                 interface: _,
                 nullable: _,
             }
-            | schema::Type::NewId { interface: _ } => quote! { 4usize },
+            | schema::Type::NewId { interface: _ } => quote! { 1usize },
             schema::Type::Fd => quote! { 0usize }, // fd occupies no space on the main transport
             schema::Type::String { nullable: false } => quote! { {
                 let len = self.#arg_name.len() + 1; // +1 for the null byte
-                (len + ::core::mem::align_of::<u32>() - 1) & !(core::mem::align_of::<u32>() - 1) + 4usize
+                1usize + (len + ::core::mem::size_of::<u32>() - 1) / 4
             } }, // TODO: implement
-            schema::Type::String { nullable: true } => quote! {
-                {
-                    match &self.#arg_name {
-                        None => 0usize,
-                        Some(arg) => {
-                            let len = arg.len() + 1; // +1 for the null byte
-                            (len + ::core::mem::align_of::<u32>() - 1) & !(core::mem::align_of::<u32>() - 1)
-                        },
-                    }
-                } + 4usize
-            },
+            schema::Type::String { nullable: true } => quote! { {
+                1usize + match &self.#arg_name {
+                    None => 0usize,
+                    Some(arg) => {
+                        let len = arg.len() + 1; // +1 for the null byte
+                        (len + ::core::mem::size_of::<u32>() - 1) / 4
+                    },
+                }
+            } },
             schema::Type::Array => quote! { { unimplemented!() as usize } }, // TODO: implement
         }
         .to_tokens(tokens);

@@ -164,6 +164,7 @@ name = "wayland-test"
 version = "0.1.0"
 dependencies = [
  "wayland-client",
+ "wayland-core",
 ]
 
 [[package]]
