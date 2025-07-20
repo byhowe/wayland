@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-wayland-client = { version = "0.1.0", path = "../wayland-client/" }
+wayland-client = { version = "0.1", path = "../wayland-client" }

@@ -6,6 +6,10 @@ members = [
     "wayland-client",
     "wayland-xml",
 
+    # Extra protocols
+    "wayland-protocols",
+    "wayland-protocols-wlr",
+
     # Testing ground.
-    "wayland-test",
+    "wayland-test"
 ]

@@ -6,11 +6,13 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+#[rustfmt::skip]
 pub mod protocol
 {
-    use wayland_scanner::generate;
-
-    generate!();
+    pub mod wayland {
+        use wayland_scanner::generate;
+        generate!("./wayland/protocol/wayland.xml");
+    }
 }
 
 pub struct Connection

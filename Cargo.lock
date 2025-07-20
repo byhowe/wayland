@@ -129,6 +129,27 @@ name = "wayland-core"
 version = "0.1.0"
 
 [[package]]
+name = "wayland-protocols"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "wayland-client",
+ "wayland-core",
+ "wayland-scanner",
+]
+
+[[package]]
+name = "wayland-protocols-wlr"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "wayland-client",
+ "wayland-core",
+ "wayland-protocols",
+ "wayland-scanner",
+]
+
+[[package]]
 name = "wayland-scanner"
 version = "0.1.0"
 dependencies = [

@@ -10,8 +10,8 @@ use std::mem::MaybeUninit;
 
 use wayland_client::Connection;
 use wayland_client::protocol::wayland as wl;
-use wayland_client::protocol::wayland::display::request::GetRegistry;
-use wayland_client::protocol::wayland::display::request::Sync;
+use wayland_client::protocol::wayland::wl_display::request::GetRegistry;
+use wayland_client::protocol::wayland::wl_display::request::Sync;
 
 fn main()
 {
@@ -80,7 +80,7 @@ fn main()
         conn.stream.read_exact(&mut buf).unwrap();
 
         match opcode {
-            wl::registry::event::Global::OPCODE if oid == id_registry => {
+            wl::wl_registry::event::Global::OPCODE if oid == id_registry => {
                 let name: u32 = unsafe { *buf.as_ptr().add(0).cast() };
                 let string_size: u32 = unsafe { *buf.as_ptr().add(4).cast() };
                 assert_eq!(
@@ -92,7 +92,7 @@ fn main()
                     (string_size as usize + align_of::<u32>() - 1) & !(align_of::<u32>() - 1);
                 let version: u32 = unsafe { *buf.as_ptr().add(8).add(padding).cast() };
 
-                let evt = wl::registry::event::Global {
+                let evt = wl::wl_registry::event::Global {
                     name,
                     interface: iface.to_owned().into_string().unwrap(),
                     version,
@@ -100,10 +100,10 @@ fn main()
 
                 println!("{:?}", evt);
             }
-            wl::callback::event::Done::OPCODE if oid == id_callback => {
+            wl::wl_callback::event::Done::OPCODE if oid == id_callback => {
                 let callback_data: u32 = unsafe { *buf.as_ptr().add(0).cast() };
 
-                let evt = wl::callback::event::Done { callback_data };
+                let evt = wl::wl_callback::event::Done { callback_data };
 
                 println!("{:?}", evt);
 

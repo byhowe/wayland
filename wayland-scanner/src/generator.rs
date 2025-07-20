@@ -44,21 +44,18 @@ impl ToTokens for Protocol<'_>
         let meta_name = protocol_name.to_string();
 
         quote! {
-            pub mod #protocol_name {
-                // refers to the current protocol module
-                use super::#protocol_name as __protocol_root;
+            use super::#protocol_name as __protocol_root;
 
-                #(#interface_modules)*
+            #(#interface_modules)*
 
-                #(#[doc(inline)] pub use #interface_paths_x;)*
+            #(#[doc(inline)] pub use #interface_paths_x;)*
 
-                pub const META: ::wayland_core::meta::Protocol = ::wayland_core::meta::Protocol {
-                    name: #meta_name,
-                    interfaces: &[
-                        #(&#interface_paths_y::META,)*
-                    ],
-                };
-            }
+            pub const META: ::wayland_core::meta::Protocol = ::wayland_core::meta::Protocol {
+                name: #meta_name,
+                interfaces: &[
+                    #(&#interface_paths_y::META,)*
+                ],
+            };
         }
         .to_tokens(tokens);
     }
@@ -74,7 +71,7 @@ impl InterfaceModule<'_>
 {
     fn format_name<S: AsRef<str>>(wl_name: S) -> Ident
     {
-        format_ident!("{}", wl_name.as_ref().trim_prefix("wl_"))
+        format_ident!("{}", wl_name.as_ref())
     }
 
     fn name(&self) -> Ident
@@ -131,7 +128,7 @@ impl InterfaceStruct<'_>
 {
     fn format_name<S: AsRef<str>>(wl_name: S) -> Ident
     {
-        format_ident!("{}", snake_to_camel(wl_name.as_ref().trim_prefix("wl_")))
+        format_ident!("{}", snake_to_camel(wl_name.as_ref()))
     }
 
     fn resolve_path<S: AsRef<str>>(wl_path: S) -> Path
