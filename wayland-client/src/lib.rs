@@ -1,10 +1,17 @@
 use std::env;
 use std::ffi::OsString;
 use std::io;
+use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 
 use thiserror::Error;
+use wayland_core::Header;
+use wayland_core::Message;
+use wayland_core::Object;
+use wayland_core::bytes;
+use wayland_core::prepare_buf;
+use wayland_core::write_header;
 
 #[rustfmt::skip]
 pub mod protocol
@@ -21,6 +28,7 @@ pub mod protocol
 pub struct Connection
 {
     pub stream: UnixStream,
+    buf: Vec<u32>,
 }
 
 impl Connection
@@ -45,7 +53,33 @@ impl Connection
         // The CLOEXEC flag is set on supported platforms.
         let stream = UnixStream::connect(socket_path)?;
 
-        Ok(Self { stream })
+        Ok(Self {
+            stream,
+            buf: Vec::new(),
+        })
+    }
+
+    pub fn send_message<O: Into<Object>, M: Message>(
+        &mut self,
+        object: O,
+        msg: &M,
+    ) -> io::Result<()>
+    {
+        let size = 2 + msg.size();
+        let header = Header::new(object, size as u16 * 4, M::OPCODE);
+
+        prepare_buf(&mut self.buf, size);
+        let buf = write_header(&mut self.buf, header);
+        msg.write(buf);
+
+        self.stream.write_all(bytes(&self.buf))?;
+
+        Ok(())
+    }
+
+    pub fn inner_buf<'conn>(&'conn self) -> &'conn [u32]
+    {
+        &self.buf
     }
 }
 
