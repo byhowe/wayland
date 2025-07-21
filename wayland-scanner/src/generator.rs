@@ -260,6 +260,8 @@ impl ToTokens for MessageStruct<'_>
         let arg_sizes = self.0.args.iter().map(|arg| ArgSize(arg));
         let no_arg_size = arg_sizes.is_empty().then_some(quote! { 0usize });
 
+        let arg_writes = self.0.args.iter().map(|arg| ArgWrite(arg));
+
         quote! {
             #[derive(Debug, Clone, PartialEq, Eq)]
             pub struct #message_name {
@@ -274,6 +276,16 @@ impl ToTokens for MessageStruct<'_>
                 pub const fn count(&self) -> usize {
                     0usize + #no_arg_size
                     #(#arg_sizes)+*
+                }
+
+                #[inline]
+                pub fn write<'buf, O: Into<::wayland_core::Object>>(&self, buf: &'buf mut Vec<u32>, object: O) {
+                    let count = self.count() + 2; // +2 for the header size
+                    let header = ::wayland_core::Header::new(object, count as u16 * 4, Self::OPCODE);
+                    ::wayland_core::prepare_buf(buf, count);
+                    let buf = ::wayland_core::write_header(buf, header);
+                    #(let buf = #arg_writes;)*
+                    let _ = buf;
                 }
             }
         }
@@ -516,6 +528,51 @@ impl ToTokens for ArgSize<'_>
                 }
             } },
             schema::Type::Array => quote! { { unimplemented!() as usize } }, // TODO: implement
+        }
+        .to_tokens(tokens);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ArgWrite<'a>(pub &'a schema::Arg);
+
+impl ToTokens for ArgWrite<'_>
+{
+    fn to_tokens(&self, tokens: &mut TokenStream)
+    {
+        let arg_name = Arg(self.0).name();
+
+        match &self.0.typ {
+            schema::Type::Int { enu: None } => {
+                quote! { ::wayland_core::write_int(buf, self.#arg_name) }
+            }
+            schema::Type::Int { enu: Some(_) } => {
+                quote! { ::wayland_core::write_int(buf, u32::from(self.#arg_name).cast_signed()) }
+            }
+            schema::Type::Uint { enu: None } => {
+                quote! { ::wayland_core::write_uint(buf, self.#arg_name) }
+            }
+            schema::Type::Uint { enu: Some(_) } => {
+                quote! { ::wayland_core::write_uint(buf, u32::from(self.#arg_name)) }
+            }
+            schema::Type::Fixed => quote! { ::wayland_core::write_fixed(buf, self.#arg_name) },
+            schema::Type::String { nullable: false } => {
+                quote! { ::wayland_core::write_string(buf, self.#arg_name.as_str()) }
+            }
+            schema::Type::String { nullable: true } => {
+                quote! { ::wayland_core::write_string_nullable(buf, self.#arg_name.as_ref()) }
+            }
+            schema::Type::Object {
+                nullable: false, ..
+            } => quote! { ::wayland_core::write_object(buf, self.#arg_name) },
+            schema::Type::Object { nullable: true, .. } => {
+                quote! { ::wayland_core::write_object_nullable(buf, self.#arg_name) }
+            }
+            schema::Type::NewId { .. } => {
+                quote! { ::wayland_core::write_object(buf, self.#arg_name) }
+            }
+            schema::Type::Array => quote! { unimplemented!() },
+            schema::Type::Fd => quote! { unimplemented!() },
         }
         .to_tokens(tokens);
     }
