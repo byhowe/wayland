@@ -6,44 +6,28 @@ use std::io::Write;
 
 use wayland_client::Connection;
 use wayland_client::protocol::wayland as wl;
+use wayland_client::protocol::wayland::WlCallback;
+use wayland_client::protocol::wayland::WlDisplay;
+use wayland_client::protocol::wayland::WlRegistry;
 use wayland_client::protocol::wayland::wl_callback::event::Done;
 use wayland_client::protocol::wayland::wl_display::event::Error;
 use wayland_client::protocol::wayland::wl_display::request::GetRegistry;
 use wayland_client::protocol::wayland::wl_display::request::Sync;
 use wayland_client::protocol::wayland::wl_registry::event::Global;
-use wayland_core::Header;
+use wayland_core::Object;
 use wayland_core::bytes;
 use wayland_core::bytes_mut;
 use wayland_core::prepare_buf;
 use wayland_core::read_header;
+use wayland_core::read_object;
 use wayland_core::read_string;
 use wayland_core::read_uint;
-use wayland_core::write_header;
-use wayland_core::write_uint;
 
 fn debug_buf(buf: &[u32])
 {
     buf.iter()
         .enumerate()
         .for_each(|(i, word)| println!("word[{:02}] = {:08x}", i, word));
-}
-
-fn write_get_registry<'buf>(buf: &'buf mut Vec<u32>, object: u32, msg: &GetRegistry)
-{
-    let count = msg.count() + 2; // +2 for the header size
-    prepare_buf(buf, count);
-    let opcode = GetRegistry::OPCODE;
-    let buf = write_header(buf, Header::new(object, count as u16 * 4, opcode));
-    let buf = write_uint(buf, msg.registry);
-}
-
-fn write_sync<'buf>(buf: &'buf mut Vec<u32>, object: u32, msg: &Sync)
-{
-    let count = msg.count() + 2;
-    prepare_buf(buf, count);
-    let opcode = Sync::OPCODE;
-    let buf = write_header(buf, Header::new(object, count as u16 * 4, opcode));
-    let buf = write_uint(buf, msg.callback);
 }
 
 fn read_global(buf: &[u32]) -> Global
@@ -70,7 +54,7 @@ fn read_done(buf: &[u32]) -> Done
 
 fn read_error(buf: &[u32]) -> Error
 {
-    let (buf, object_id) = read_uint(buf);
+    let (buf, object_id) = read_object(buf);
     let (buf, code) = read_uint(buf);
     let (buf, message) = read_string(buf);
     let _ = buf;
@@ -87,15 +71,15 @@ fn main()
     let mut conn = Connection::connect().unwrap();
     let mut buf = Vec::new();
 
-    let id_display: u32 = 1; // wl_display (always assigned to 1)
-    let id_registry: u32 = 2; // wl_registry
-    let id_callback: u32 = 3; // wl_callback
+    let id_display: WlDisplay = Object::new(1).unwrap().into(); // wl_display (always assigned to 1)
+    let id_registry: WlRegistry = Object::new(2).unwrap().into(); // wl_registry
+    let id_callback: WlCallback = Object::new(3).unwrap().into(); // wl_callback
 
     // -- GET REGISTRY --
     let req = GetRegistry {
         registry: id_registry,
     };
-    write_get_registry(&mut buf, id_display, &req);
+    req.write(&mut buf, id_display);
     conn.stream.write_all(bytes(&buf)).unwrap();
     debug_buf(&buf);
 
@@ -103,7 +87,7 @@ fn main()
     let req = Sync {
         callback: id_callback,
     };
-    write_sync(&mut buf, id_display, &req);
+    req.write(&mut buf, id_display);
     conn.stream.write_all(bytes(&buf)).unwrap();
     debug_buf(&buf);
 
@@ -133,17 +117,17 @@ fn main()
         conn.stream.read_exact(bytes_mut(&mut buf)).unwrap();
 
         match header.opcode {
-            wl::wl_registry::event::Global::OPCODE if header.object == id_registry => {
+            wl::wl_registry::event::Global::OPCODE if header.object == id_registry.into() => {
                 let evt = read_global(&buf);
                 println!("{:?}", evt);
             }
-            wl::wl_callback::event::Done::OPCODE if header.object == id_callback => {
+            wl::wl_callback::event::Done::OPCODE if header.object == id_callback.into() => {
                 let evt = read_done(&buf);
                 println!("{:?}", evt);
 
                 break;
             }
-            wl::wl_display::event::Error::OPCODE if header.object == id_display => {
+            wl::wl_display::event::Error::OPCODE if header.object == id_display.into() => {
                 let evt = read_error(&buf);
                 println!("{:?}", evt);
             }
