@@ -1,4 +1,5 @@
 #![allow(unreachable_code)]
+#![cfg_attr(rustfmt, rustfmt_skip)]
 
 pub mod ext_image_copy_capture_v1
 {
@@ -110,6 +111,7 @@ pub mod xdg_toplevel_tag_v1
 
 pub mod single_pixel_buffer_v1
 {
+    use wayland_client::protocol::wayland::*;
     use wayland_scanner::generate;
 
     generate!("../upstream/wayland-protocols/staging/single-pixel-buffer/single-pixel-buffer-v1.xml");
@@ -195,6 +197,7 @@ pub mod cursor_shape_v1
     use wayland_client::protocol::wayland::*;
     use wayland_scanner::generate;
 
+    // NOTE: zwp_tablet_tool_v2 interface also exists in the unstable_v2 branch.
     use crate::tablet_v2::zwp_tablet_tool_v2;
 
     generate!("../upstream/wayland-protocols/staging/cursor-shape/cursor-shape-v1.xml");

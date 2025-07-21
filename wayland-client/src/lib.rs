@@ -10,6 +10,8 @@ use thiserror::Error;
 pub mod protocol
 {
     pub mod wayland {
+        #![allow(unreachable_code)]
+
         use wayland_scanner::generate;
 
         generate!("../upstream/wayland/protocol/wayland.xml");

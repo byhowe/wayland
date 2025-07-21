@@ -34,15 +34,15 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     let output = quote! { #protocol };
 
     // Dump generated code to a file in target/wayland-gen
-    // let out_dir = std::env::var("CARGO_TARGET_DIR")
-    //     .map(PathBuf::from)
-    //     .unwrap_or_else(|_| PathBuf::from("target"));
+    let out_dir = std::env::var("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("target"));
 
-    // let file_stem = path.file_stem().unwrap().to_string_lossy();
-    // let out_path = out_dir.join("wayland-gen").join(format!("{file_stem}.rs"));
+    let file_stem = path.file_stem().unwrap().to_string_lossy();
+    let out_path = out_dir.join("wayland-gen").join(format!("{file_stem}.rs"));
 
-    // fs::create_dir_all(out_path.parent().unwrap()).unwrap();
-    // fs::write(&out_path, output.to_string()).expect("Failed to write generated code");
+    fs::create_dir_all(out_path.parent().unwrap()).unwrap();
+    fs::write(&out_path, output.to_string()).expect("Failed to write generated code");
 
     // eprintln!("Generated code written to: {}", out_path.display());
 

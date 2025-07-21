@@ -1,3 +1,6 @@
+#![allow(unreachable_code)]
+#![cfg_attr(rustfmt, rustfmt_skip)]
+
 pub mod wlr_virtual_pointer_unstable_v1
 {
     use wayland_client::protocol::wayland::*;
@@ -8,7 +11,6 @@ pub mod wlr_virtual_pointer_unstable_v1
 
 pub mod wlr_input_inhibit_unstable_v1
 {
-    use wayland_client::protocol::wayland::*;
     use wayland_scanner::generate;
 
     generate!("../upstream/wlr-protocols/unstable/wlr-input-inhibitor-unstable-v1.xml");
