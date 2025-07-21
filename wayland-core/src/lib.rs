@@ -4,7 +4,10 @@ use std::num::NonZero;
 use std::ptr;
 use std::slice;
 
+mod argument;
 pub mod meta;
+
+pub use argument::Argument;
 
 pub type Fixed = i32;
 
