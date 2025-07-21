@@ -82,8 +82,9 @@ pub fn write_fixed<'buf>(buf: &'buf mut [u32], value: Fixed) -> &'buf mut [u32]
 
 #[inline(always)]
 #[must_use]
-pub fn write_string<'buf>(buf: &'buf mut [u32], value: &str) -> &'buf mut [u32]
+pub fn write_string<'buf, S: AsRef<str>>(buf: &'buf mut [u32], value: S) -> &'buf mut [u32]
 {
+    let value = value.as_ref();
     let size = value.len() + 1; // +1 for the null byte
     let buf = write_uint(buf, size as u32);
     // PERF: can we use copy_nonoverlapping here?
@@ -96,7 +97,10 @@ pub fn write_string<'buf>(buf: &'buf mut [u32], value: &str) -> &'buf mut [u32]
 
 #[inline(always)]
 #[must_use]
-pub fn write_string_nullable<'buf>(buf: &'buf mut [u32], value: Option<&str>) -> &'buf mut [u32]
+pub fn write_string_nullable<'buf, S: AsRef<str>>(
+    buf: &'buf mut [u32],
+    value: Option<S>,
+) -> &'buf mut [u32]
 {
     match value {
         Some(value) => write_string(buf, value),
