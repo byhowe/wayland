@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::ffi::CStr;
+use std::num::NonZero;
 use std::ptr;
 use std::slice;
 
@@ -7,7 +8,7 @@ pub mod meta;
 
 pub type Fixed = i32;
 
-pub type Object = u32;
+pub type Object = NonZero<u32>;
 
 pub type Array = ();
 
@@ -24,10 +25,10 @@ pub struct Header
 impl Header
 {
     #[inline(always)]
-    pub fn new(object: Object, size: u16, opcode: u16) -> Self
+    pub fn new<O: Into<Object>>(object: O, size: u16, opcode: u16) -> Self
     {
         Header {
-            object,
+            object: object.into(),
             size,
             opcode,
         }
@@ -105,9 +106,20 @@ pub fn write_string_nullable<'buf>(buf: &'buf mut [u32], value: Option<&str>) ->
 
 #[inline(always)]
 #[must_use]
-pub fn write_object<'buf>(buf: &'buf mut [u32], value: Object) -> &'buf mut [u32]
+pub fn write_object<'buf, T: Into<Object>>(buf: &'buf mut [u32], value: T) -> &'buf mut [u32]
 {
-    buf[0] = value;
+    buf[0] = value.into().get();
+    &mut buf[1..]
+}
+
+#[inline(always)]
+#[must_use]
+pub fn write_object_nullable<'buf, T: Into<Object>>(
+    buf: &'buf mut [u32],
+    value: Option<T>,
+) -> &'buf mut [u32]
+{
+    buf[0] = value.map(|val| val.into().get()).unwrap_or(0);
     &mut buf[1..]
 }
 
@@ -115,7 +127,7 @@ pub fn write_object<'buf>(buf: &'buf mut [u32], value: Object) -> &'buf mut [u32
 #[must_use]
 pub fn write_new_id<'buf>(buf: &'buf mut [u32], value: Object) -> &'buf mut [u32]
 {
-    buf[0] = value;
+    buf[0] = value.get();
     &mut buf[1..]
 }
 
@@ -194,14 +206,21 @@ pub fn read_string_nullable<'buf>(buf: &'buf [u32]) -> (&'buf [u32], Option<Cow<
 #[must_use]
 pub fn read_object<'buf>(buf: &'buf [u32]) -> (&'buf [u32], Object)
 {
-    (&buf[1..], buf[0])
+    (&buf[1..], Object::new(buf[0]).unwrap())
+}
+
+#[inline(always)]
+#[must_use]
+pub fn read_object_nullable<'buf>(buf: &'buf [u32]) -> (&'buf [u32], Option<Object>)
+{
+    (&buf[1..], Object::new(buf[0]))
 }
 
 #[inline(always)]
 #[must_use]
 pub fn read_new_id<'buf>(buf: &'buf [u32]) -> (&'buf [u32], Object)
 {
-    (&buf[1..], buf[0])
+    (&buf[1..], Object::new(buf[0]).unwrap())
 }
 
 #[allow(unused_variables)]
