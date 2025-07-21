@@ -166,8 +166,23 @@ impl ToTokens for InterfaceStruct<'_>
 
         // TODO: Continue implementing the request functions
         quote! {
-            #[derive(Debug, Clone)]
-            pub struct #struct_name { }
+            #[repr(transparent)]
+            #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+            pub struct #struct_name {
+                pub object: ::wayland_core::Object,
+            }
+
+            impl ::core::convert::From<#struct_name> for ::wayland_core::Object {
+                fn from(value: #struct_name) -> Self {
+                    value.object
+                }
+            }
+
+            impl ::core::convert::From<::wayland_core::Object> for #struct_name {
+                fn from(value: ::wayland_core::Object) -> Self {
+                    Self { object: value }
+                }
+            }
 
             impl #struct_name {
                 pub const META: ::wayland_core::meta::Interface = ::wayland_core::meta::Interface {
@@ -246,7 +261,7 @@ impl ToTokens for MessageStruct<'_>
         let no_arg_size = arg_sizes.is_empty().then_some(quote! { 0usize });
 
         quote! {
-            #[derive(Debug, Clone)]
+            #[derive(Debug, Clone, PartialEq, Eq)]
             pub struct #message_name {
                 #(pub #message_args,)*
             }
@@ -255,6 +270,7 @@ impl ToTokens for MessageStruct<'_>
                 pub const OPCODE: u16 = #message_opcode;
 
                 /// Calculates how many words (u32) are needed to send this message.
+                #[inline]
                 pub const fn count(&self) -> usize {
                     0usize + #no_arg_size
                     #(#arg_sizes)+*
@@ -525,27 +541,22 @@ impl ToTokens for Type<'_>
             schema::Type::Fixed => quote! { ::wayland_core::Fixed },
             schema::Type::String { nullable: false } => quote! { String },
             schema::Type::String { nullable: true } => quote! { Option<String> },
-            schema::Type::Object {
-                interface,
-                nullable,
-            } => {
-                let interface_path = interface
+            t @ (schema::Type::Object { interface, .. } | schema::Type::NewId { interface }) => {
+                let nullable = match t {
+                    schema::Type::Object { nullable, .. } => *nullable,
+                    schema::Type::NewId { .. } => false,
+                    _ => unreachable!(),
+                };
+                let arg_type = interface
                     .as_ref()
                     .map(InterfaceStruct::resolve_path)
                     .map(|path| quote! { #path })
                     .unwrap_or(quote! { ::wayland_core::Object });
                 match nullable {
-                    true => quote! { Option<#interface_path> },
-                    false => quote! { #interface_path },
+                    false => quote! { #arg_type },
+                    true => quote! { Option<#arg_type> },
                 }
             }
-            // TODO: find a way to handle new_id
-            // schema::Type::NewId { interface } => interface
-            //     .as_ref()
-            //     .map(InterfaceStruct::resolve_path)
-            //     .map(|path| quote! { &mut #path })
-            //     .unwrap_or(quote! { &mut ::wayland_core::Object }),
-            schema::Type::NewId { interface: _ } => quote! { ::wayland_core::Object },
             schema::Type::Array => quote! { ::wayland_core::Array },
             schema::Type::Fd => quote! { ::wayland_core::Fd },
         }
