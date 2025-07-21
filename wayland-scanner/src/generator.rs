@@ -174,7 +174,7 @@ impl ToTokens for InterfaceStruct<'_>
 
             impl ::core::convert::From<#struct_name> for ::wayland_core::Object {
                 fn from(value: #struct_name) -> Self {
-                    value.object
+                    value.object()
                 }
             }
 
@@ -194,6 +194,11 @@ impl ToTokens for InterfaceStruct<'_>
                         #(&#meta_enums,)*
                     ],
                 };
+
+                #[inline(always)]
+                pub const fn object(self) -> ::wayland_core::Object {
+                    self.object
+                }
 
                 #(#request_functions)*
             }
@@ -221,7 +226,7 @@ impl ToTokens for RequestFunction<'_>
     fn to_tokens(&self, tokens: &mut TokenStream)
     {
         let request_name = self.name();
-        let request_args = self.0.args.iter().map(|arg| Arg(arg));
+        let request_args = self.0.args.iter().map(|arg| ArgField(arg));
 
         quote! {
             pub fn #request_name(
@@ -254,13 +259,18 @@ impl ToTokens for MessageStruct<'_>
     fn to_tokens(&self, tokens: &mut TokenStream)
     {
         let message_name = self.name();
-        let message_args = self.0.args.iter().map(|arg| Arg(arg));
+        let message_args = self.0.args.iter().map(|arg| ArgField(arg));
         let message_opcode = self.0.opcode;
 
-        let arg_sizes = self.0.args.iter().map(|arg| ArgSize(arg));
-        let no_arg_size = arg_sizes.is_empty().then_some(quote! { 0usize });
+        let num_args = self.0.args.len();
+        let args = self.0.args.iter().map(|arg| ArgWrap(arg));
 
-        let arg_writes = self.0.args.iter().map(|arg| ArgWrite(arg));
+        let arg_sizes = self
+            .0
+            .args
+            .iter()
+            .enumerate()
+            .map(|(i, _)| quote! { arguments[#i].size() });
 
         quote! {
             #[derive(Debug, Clone, PartialEq, Eq)]
@@ -271,21 +281,31 @@ impl ToTokens for MessageStruct<'_>
             impl #message_name {
                 pub const OPCODE: u16 = #message_opcode;
 
+                #[inline(always)]
+                pub const fn arguments<'msg>(&'msg self) -> [::wayland_core::Argument<'msg>; #num_args] {
+                    [
+                        #(#args,)*
+                    ]
+                }
+
                 /// Calculates how many words (u32) are needed to send this message.
-                #[inline]
-                pub const fn count(&self) -> usize {
-                    0usize + #no_arg_size
-                    #(#arg_sizes)+*
+                #[inline(always)]
+                pub const fn size(&self) -> usize {
+                    let arguments = self.arguments();
+                    let mut sum = 0;
+                    #(sum += #arg_sizes;)*
+                    sum
                 }
 
                 #[inline]
                 pub fn write<'buf, O: Into<::wayland_core::Object>>(&self, buf: &'buf mut Vec<u32>, object: O) {
-                    let count = self.count() + 2; // +2 for the header size
+                    let count = self.size() + 2; // +2 for the header size
                     let header = ::wayland_core::Header::new(object, count as u16 * 4, Self::OPCODE);
                     ::wayland_core::prepare_buf(buf, count);
-                    let buf = ::wayland_core::write_header(buf, header);
-                    #(let buf = #arg_writes;)*
-                    let _ = buf;
+                    let mut buf = ::wayland_core::write_header(buf, header);
+                    for arg in self.arguments() {
+                        buf = arg.write(buf);
+                    }
                 }
             }
         }
@@ -356,14 +376,28 @@ impl ToTokens for Enum<'_>
                 impl ::core::convert::TryFrom<u32> for #enum_name {
                     type Error = ();
 
+                    #[inline(always)]
                     fn try_from(value: u32) -> ::core::result::Result<Self, Self::Error> {
                         #enum_name::from_bits(value).ok_or(())
                     }
                 }
 
                 impl ::core::convert::From<#enum_name> for u32 {
+                    #[inline(always)]
                     fn from(value: #enum_name) -> Self {
                         value.bits()
+                    }
+                }
+
+                impl #enum_name {
+                    #[inline(always)]
+                    pub const fn value_unsigned(self) -> u32 {
+                        self.bits()
+                    }
+
+                    #[inline(always)]
+                    pub const fn value_signed(self) -> i32 {
+                        self.bits().cast_signed()
                     }
                 }
             },
@@ -386,6 +420,7 @@ impl ToTokens for Enum<'_>
                     impl ::core::convert::TryFrom<u32> for #enum_name {
                         type Error = ();
 
+                        #[inline(always)]
                         fn try_from(value: u32) -> ::core::result::Result<Self, Self::Error> {
                             match value {
                                 #(#try_from_arms,)*
@@ -395,8 +430,21 @@ impl ToTokens for Enum<'_>
                     }
 
                     impl ::core::convert::From<#enum_name> for u32 {
+                        #[inline(always)]
                         fn from(value: #enum_name) -> Self {
                             value as Self
+                        }
+                    }
+
+                    impl #enum_name {
+                        #[inline(always)]
+                        pub const fn value_unsigned(self) -> u32 {
+                            self as u32
+                        }
+
+                        #[inline(always)]
+                        pub const fn value_signed(self) -> i32 {
+                            (self as u32).cast_signed()
                         }
                     }
                 }
@@ -469,9 +517,9 @@ impl Entry<'_>
 }
 
 #[derive(Debug, Clone)]
-pub struct Arg<'a>(pub &'a schema::Arg);
+pub struct ArgField<'a>(pub &'a schema::Arg);
 
-impl Arg<'_>
+impl ArgField<'_>
 {
     fn name(&self) -> Ident
     {
@@ -484,7 +532,7 @@ impl Arg<'_>
     }
 }
 
-impl ToTokens for Arg<'_>
+impl ToTokens for ArgField<'_>
 {
     fn to_tokens(&self, tokens: &mut TokenStream)
     {
@@ -496,85 +544,31 @@ impl ToTokens for Arg<'_>
 }
 
 #[derive(Debug, Clone)]
-pub struct ArgSize<'a>(pub &'a schema::Arg);
+pub struct ArgWrap<'a>(pub &'a schema::Arg);
 
-impl ToTokens for ArgSize<'_>
+impl ToTokens for ArgWrap<'_>
 {
     fn to_tokens(&self, tokens: &mut TokenStream)
     {
-        let arg_name = Arg(self.0).name();
-
-        match self.0.typ {
-            schema::Type::Int { enu: _ }
-            | schema::Type::Uint { enu: _ }
-            | schema::Type::Fixed
-            | schema::Type::Object {
-                interface: _,
-                nullable: _,
-            }
-            | schema::Type::NewId { interface: _ } => quote! { 1usize },
-            schema::Type::Fd => quote! { 0usize }, // fd occupies no space on the main transport
-            schema::Type::String { nullable: false } => quote! { {
-                let len = self.#arg_name.len() + 1; // +1 for the null byte
-                1usize + (len + ::core::mem::size_of::<u32>() - 1) / 4
-            } }, // TODO: implement
-            schema::Type::String { nullable: true } => quote! { {
-                1usize + match &self.#arg_name {
-                    None => 0usize,
-                    Some(arg) => {
-                        let len = arg.len() + 1; // +1 for the null byte
-                        (len + ::core::mem::size_of::<u32>() - 1) / 4
-                    },
-                }
-            } },
-            schema::Type::Array => quote! { { unimplemented!() as usize } }, // TODO: implement
-        }
-        .to_tokens(tokens);
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ArgWrite<'a>(pub &'a schema::Arg);
-
-impl ToTokens for ArgWrite<'_>
-{
-    fn to_tokens(&self, tokens: &mut TokenStream)
-    {
-        let arg_name = Arg(self.0).name();
+        let name = ArgField(self.0).name();
 
         match &self.0.typ {
-            schema::Type::Int { enu: None } => {
-                quote! { ::wayland_core::write_int(buf, self.#arg_name) }
-            }
-            schema::Type::Int { enu: Some(_) } => {
-                quote! { ::wayland_core::write_int(buf, u32::from(self.#arg_name).cast_signed()) }
-            }
-            schema::Type::Uint { enu: None } => {
-                quote! { ::wayland_core::write_uint(buf, self.#arg_name) }
-            }
-            schema::Type::Uint { enu: Some(_) } => {
-                quote! { ::wayland_core::write_uint(buf, u32::from(self.#arg_name)) }
-            }
-            schema::Type::Fixed => quote! { ::wayland_core::write_fixed(buf, self.#arg_name) },
-            schema::Type::String { nullable: false } => {
-                quote! { ::wayland_core::write_string(buf, self.#arg_name.as_str()) }
-            }
-            schema::Type::String { nullable: true } => {
-                quote! { ::wayland_core::write_string_nullable(buf, self.#arg_name.as_ref()) }
-            }
-            schema::Type::Object {
-                nullable: false, ..
-            } => quote! { ::wayland_core::write_object(buf, self.#arg_name) },
-            schema::Type::Object { nullable: true, .. } => {
-                quote! { ::wayland_core::write_object_nullable(buf, self.#arg_name) }
-            }
-            schema::Type::NewId { .. } => {
-                quote! { ::wayland_core::write_object(buf, self.#arg_name) }
-            }
+            schema::Type::Int { enu: None } => quote! { ::wayland_core::Argument::Int(self.#name) },
+            schema::Type::Int { enu: Some(_) } => quote! { ::wayland_core::Argument::Int(self.#name.value_signed()) },
+            schema::Type::Uint { enu: None } => quote! { ::wayland_core::Argument::Uint(self.#name) },
+            schema::Type::Uint { enu: Some(_) } => quote! { ::wayland_core::Argument::Uint(self.#name.value_unsigned()) },
+            schema::Type::Fixed => quote! { ::wayland_core::Argument::Fixed(self.#name) },
+            schema::Type::String { nullable: false } => quote! { ::wayland_core::Argument::String(self.#name.as_str()) },
+            schema::Type::String { nullable: true } => quote! { ::wayland_core::Argument::StringNullable(if let Some(s) = self.#name.as_ref() { Some(s.as_str()) } else { None }) },
+            schema::Type::Object { interface: None, nullable: false } => quote! { ::wayland_core::Argument::Object(self.#name) },
+            schema::Type::Object { interface: Some(_), nullable: false } => quote! { ::wayland_core::Argument::Object(self.#name.object()) },
+            schema::Type::Object { interface: None, nullable: true } => quote! { ::wayland_core::Argument::ObjectNullable(self.#name) },
+            schema::Type::Object { interface: Some(_), nullable: true } => quote! { ::wayland_core::Argument::ObjectNullable(if let Some(o) = self.#name { Some(o.object()) } else { None }) },
+            schema::Type::NewId { interface: None } => quote! { ::wayland_core::Argument::NewId(self.#name) },
+            schema::Type::NewId { interface: Some(_) } => quote! { ::wayland_core::Argument::NewId(self.#name.object()) },
             schema::Type::Array => quote! { unimplemented!() },
             schema::Type::Fd => quote! { unimplemented!() },
-        }
-        .to_tokens(tokens);
+        }.to_tokens(tokens);
     }
 }
 
