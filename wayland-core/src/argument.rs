@@ -30,7 +30,7 @@ impl Argument<'_>
 {
     /// Calculate the size in words (u32) needed for this argument.
     #[inline(always)]
-    pub const fn size(&self) -> usize
+    pub const fn size(self) -> usize
     {
         match self {
             Argument::Int(_) | Argument::Uint(_) | Argument::Fixed(_) => 1,
@@ -64,4 +64,9 @@ impl Argument<'_>
             Argument::Fd(_) => unimplemented!(),
         }
     }
+}
+
+pub trait Arguments
+{
+    fn arguments(&self) -> impl Iterator<Item = Argument<'_>>;
 }
