@@ -169,7 +169,7 @@ impl ToTokens for InterfaceStruct<'_>
             #[repr(transparent)]
             #[derive(Copy, Clone, Debug, PartialEq, Eq)]
             pub struct #struct_name {
-                pub object: ::wayland_core::Object,
+                object: ::wayland_core::Object,
             }
 
             impl ::core::convert::From<#struct_name> for ::wayland_core::Object {
@@ -185,6 +185,17 @@ impl ToTokens for InterfaceStruct<'_>
             }
 
             impl #struct_name {
+                #[inline(always)]
+                pub const fn object(self) -> ::wayland_core::Object {
+                    self.object
+                }
+
+                pub const fn new(object: ::wayland_core::Object) -> Self {
+                    Self { object }
+                }
+
+                #(#request_functions)*
+
                 pub const META: ::wayland_core::meta::Interface = ::wayland_core::meta::Interface {
                     name: #meta_name,
                     version: #meta_version,
@@ -194,13 +205,6 @@ impl ToTokens for InterfaceStruct<'_>
                         #(&#meta_enums,)*
                     ],
                 };
-
-                #[inline(always)]
-                pub const fn object(self) -> ::wayland_core::Object {
-                    self.object
-                }
-
-                #(#request_functions)*
             }
         }
         .to_tokens(tokens);
@@ -262,15 +266,7 @@ impl ToTokens for MessageStruct<'_>
         let message_args = self.0.args.iter().map(|arg| ArgField(arg));
         let message_opcode = self.0.opcode;
 
-        let num_args = self.0.args.len();
         let args = self.0.args.iter().map(|arg| ArgWrap(arg));
-
-        let arg_sizes = self
-            .0
-            .args
-            .iter()
-            .enumerate()
-            .map(|(i, _)| quote! { arguments[#i].size() });
 
         quote! {
             #[derive(Debug, Clone, PartialEq, Eq)]
@@ -278,34 +274,14 @@ impl ToTokens for MessageStruct<'_>
                 #(pub #message_args,)*
             }
 
-            impl #message_name {
-                pub const OPCODE: u16 = #message_opcode;
+            impl ::wayland_core::Opcode for #message_name {
+                const OPCODE: u16 = #message_opcode;
+            }
 
+            impl ::wayland_core::Arguments for #message_name {
                 #[inline(always)]
-                pub const fn arguments<'msg>(&'msg self) -> [::wayland_core::Argument<'msg>; #num_args] {
-                    [
-                        #(#args,)*
-                    ]
-                }
-
-                /// Calculates how many words (u32) are needed to send this message.
-                #[inline(always)]
-                pub const fn size(&self) -> usize {
-                    let arguments = self.arguments();
-                    let mut sum = 0;
-                    #(sum += #arg_sizes;)*
-                    sum
-                }
-
-                #[inline]
-                pub fn write<'buf, O: Into<::wayland_core::Object>>(&self, buf: &'buf mut Vec<u32>, object: O) {
-                    let count = self.size() + 2; // +2 for the header size
-                    let header = ::wayland_core::Header::new(object, count as u16 * 4, Self::OPCODE);
-                    ::wayland_core::prepare_buf(buf, count);
-                    let mut buf = ::wayland_core::write_header(buf, header);
-                    for arg in self.arguments() {
-                        buf = arg.write(buf);
-                    }
+                fn arguments<'msg>(&'msg self) -> impl Iterator<Item = ::wayland_core::Argument<'_>> {
+                    [ #(#args),* ].into_iter()
                 }
             }
         }
