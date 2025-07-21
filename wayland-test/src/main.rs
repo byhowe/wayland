@@ -14,6 +14,7 @@ use wayland_client::protocol::wayland::wl_display::event::Error;
 use wayland_client::protocol::wayland::wl_display::request::GetRegistry;
 use wayland_client::protocol::wayland::wl_display::request::Sync;
 use wayland_client::protocol::wayland::wl_registry::event::Global;
+use wayland_core::Message;
 use wayland_core::Object;
 use wayland_core::bytes;
 use wayland_core::bytes_mut;
@@ -76,20 +77,24 @@ fn main()
     let id_callback: WlCallback = Object::new(3).unwrap().into(); // wl_callback
 
     // -- GET REGISTRY --
-    let req = GetRegistry {
-        registry: id_registry,
-    };
-    req.write(&mut buf, id_display);
-    conn.stream.write_all(bytes(&buf)).unwrap();
-    debug_buf(&buf);
+    conn.send_message(
+        id_display,
+        &GetRegistry {
+            registry: id_registry,
+        },
+    )
+    .unwrap();
+    debug_buf(conn.inner_buf());
 
     // -- SYNC --
-    let req = Sync {
-        callback: id_callback,
-    };
-    req.write(&mut buf, id_display);
-    conn.stream.write_all(bytes(&buf)).unwrap();
-    debug_buf(&buf);
+    conn.send_message(
+        id_display,
+        &Sync {
+            callback: id_callback,
+        },
+    )
+    .unwrap();
+    debug_buf(conn.inner_buf());
 
     // Read
     loop {
