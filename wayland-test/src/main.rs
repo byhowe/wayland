@@ -2,7 +2,6 @@
 
 use std::io::ErrorKind;
 use std::io::Read;
-use std::io::Write;
 
 use wayland_client::Connection;
 use wayland_client::protocol::wayland as wl;
@@ -14,15 +13,13 @@ use wayland_client::protocol::wayland::wl_display::event::Error;
 use wayland_client::protocol::wayland::wl_display::request::GetRegistry;
 use wayland_client::protocol::wayland::wl_display::request::Sync;
 use wayland_client::protocol::wayland::wl_registry::event::Global;
+use wayland_core::Header;
 use wayland_core::Message;
 use wayland_core::Object;
-use wayland_core::bytes;
+use wayland_core::Wire;
+use wayland_core::WireError;
 use wayland_core::bytes_mut;
 use wayland_core::prepare_buf;
-use wayland_core::read_header;
-use wayland_core::read_object;
-use wayland_core::read_string;
-use wayland_core::read_uint;
 
 fn debug_buf(buf: &[u32])
 {
@@ -31,40 +28,40 @@ fn debug_buf(buf: &[u32])
         .for_each(|(i, word)| println!("word[{:02}] = {:08x}", i, word));
 }
 
-fn read_global(buf: &[u32]) -> Global
+fn read_global(buf: &[u32]) -> Result<Global, WireError>
 {
-    let (buf, name) = read_uint(buf);
-    let (buf, interface) = read_string(buf);
-    let (buf, version) = read_uint(buf);
+    let (buf, name) = u32::read(buf)?;
+    let (buf, interface) = String::read(buf)?;
+    let (buf, version) = u32::read(buf)?;
     let _ = buf;
 
-    Global {
+    Ok(Global {
         name,
-        interface: interface.to_string(),
+        interface,
         version,
-    }
+    })
 }
 
-fn read_done(buf: &[u32]) -> Done
+fn read_done(buf: &[u32]) -> Result<Done, WireError>
 {
-    let (buf, callback_data) = read_uint(buf);
+    let (buf, callback_data) = u32::read(buf)?;
     let _ = buf;
 
-    Done { callback_data }
+    Ok(Done { callback_data })
 }
 
-fn read_error(buf: &[u32]) -> Error
+fn read_error(buf: &[u32]) -> Result<Error, WireError>
 {
-    let (buf, object_id) = read_object(buf);
-    let (buf, code) = read_uint(buf);
-    let (buf, message) = read_string(buf);
+    let (buf, object_id) = Object::read(buf)?;
+    let (buf, code) = u32::read(buf)?;
+    let (buf, message) = String::read(buf)?;
     let _ = buf;
 
-    Error {
+    Ok(Error {
         object_id,
         code,
         message: message.to_string(),
-    }
+    })
 }
 
 fn main()
@@ -110,7 +107,7 @@ fn main()
             }
             _ => {}
         }
-        let (_, header) = read_header(&header);
+        let (_, header) = Header::read(&header).unwrap();
 
         assert!(header.size % 4 == 0, "message must be 4 bytes aligned");
         assert!(
@@ -138,7 +135,8 @@ fn main()
             }
             _ => eprintln!(
                 "unexpected object: {}, opcode: {}. ignoring...",
-                header.object, header.opcode
+                header.object.get(),
+                header.opcode
             ),
         }
     }

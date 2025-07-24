@@ -9,9 +9,9 @@ use thiserror::Error;
 use wayland_core::Header;
 use wayland_core::Message;
 use wayland_core::Object;
+use wayland_core::Wire;
 use wayland_core::bytes;
 use wayland_core::prepare_buf;
-use wayland_core::write_header;
 
 #[rustfmt::skip]
 pub mod protocol
@@ -66,10 +66,10 @@ impl Connection
     ) -> io::Result<()>
     {
         let size = 2 + msg.size();
-        let header = Header::new(object, size as u16 * 4, M::OPCODE);
+        let header = Header::new(object.into(), size as u16 * 4, M::OPCODE);
 
         prepare_buf(&mut self.buf, size);
-        let buf = write_header(&mut self.buf, header);
+        let buf = header.write(&mut self.buf);
         msg.write(buf);
 
         self.stream.write_all(bytes(&self.buf))?;

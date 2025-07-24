@@ -1,7 +1,5 @@
 use crate::Argument;
 use crate::Arguments;
-use crate::Header;
-use crate::Object;
 
 pub trait Message
 {

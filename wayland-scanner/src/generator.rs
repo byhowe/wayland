@@ -542,7 +542,7 @@ impl ToTokens for ArgWrap<'_>
             schema::Type::Object { interface: Some(_), nullable: true } => quote! { ::wayland_core::Argument::ObjectNullable(if let Some(o) = self.#name { Some(o.object()) } else { None }) },
             schema::Type::NewId { interface: None } => quote! { ::wayland_core::Argument::NewId(self.#name) },
             schema::Type::NewId { interface: Some(_) } => quote! { ::wayland_core::Argument::NewId(self.#name.object()) },
-            schema::Type::Array => quote! { unimplemented!() },
+            schema::Type::Array => quote! { ::wayland_core::Argument::Array(&self.#name) },
             schema::Type::Fd => quote! { unimplemented!() },
         }.to_tokens(tokens);
     }
@@ -584,7 +584,7 @@ impl ToTokens for Type<'_>
                     true => quote! { Option<#arg_type> },
                 }
             }
-            schema::Type::Array => quote! { ::wayland_core::Array },
+            schema::Type::Array => quote! { Vec<u8> },
             schema::Type::Fd => quote! { ::wayland_core::Fd },
         }
         .to_tokens(tokens);
