@@ -35,11 +35,11 @@ impl ToTokens for Protocol<'_>
 
         let interface_modules = interfaces.clone().map(|(iface_module, _)| iface_module);
 
-        let interface_paths_x = interfaces
+        let interface_paths = interfaces
             .clone()
             .map(|(iface_module, iface_struct)| (iface_module.name(), iface_struct.name()))
-            .map(|(iface_module, iface_struct)| quote! { #iface_module::#iface_struct });
-        let interface_paths_y = interface_paths_x.clone();
+            .map(|(iface_module, iface_struct)| quote! { #iface_module::#iface_struct })
+            .collect::<Vec<_>>();
 
         let meta_name = protocol_name.to_string();
 
@@ -48,12 +48,12 @@ impl ToTokens for Protocol<'_>
 
             #(#interface_modules)*
 
-            #(#[doc(inline)] pub use #interface_paths_x;)*
+            #(#[doc(inline)] pub use #interface_paths;)*
 
             pub const META: ::wayland_core::meta::Protocol = ::wayland_core::meta::Protocol {
                 name: #meta_name,
                 interfaces: &[
-                    #(&#interface_paths_y::META,)*
+                    #(&#interface_paths::META,)*
                 ],
             };
         }
@@ -230,7 +230,10 @@ impl ToTokens for RequestFunction<'_>
     fn to_tokens(&self, tokens: &mut TokenStream)
     {
         let request_name = self.name();
-        let request_args = self.0.args.iter().map(|arg| ArgField(arg));
+        let request_args = self.0.args.iter().map(|arg| ArgField {
+            arg,
+            ctx: TypeContext::Function,
+        });
 
         quote! {
             pub fn #request_name(
@@ -256,6 +259,19 @@ impl MessageStruct<'_>
     {
         Self::format_name(&self.0.name)
     }
+
+    fn generics(&self) -> Option<TokenStream>
+    {
+        self.0
+            .args
+            .iter()
+            .find(|arg| match arg.typ {
+                schema::Type::String { .. } | schema::Type::Array => true,
+                _ => false,
+            })
+            .is_some()
+            .then_some(quote! { <'a> })
+    }
 }
 
 impl ToTokens for MessageStruct<'_>
@@ -263,26 +279,21 @@ impl ToTokens for MessageStruct<'_>
     fn to_tokens(&self, tokens: &mut TokenStream)
     {
         let message_name = self.name();
-        let message_args = self.0.args.iter().map(|arg| ArgField(arg));
+        let message_generics = self.generics();
+        let message_args = self.0.args.iter().map(|arg| ArgField {
+            arg,
+            ctx: TypeContext::Struct,
+        });
         let message_opcode = self.0.opcode;
-
-        let args = self.0.args.iter().map(|arg| ArgWrap(arg));
 
         quote! {
             #[derive(Debug, Clone, PartialEq, Eq)]
-            pub struct #message_name {
+            pub struct #message_name #message_generics {
                 #(pub #message_args,)*
             }
 
-            impl ::wayland_core::Opcode for #message_name {
+            impl #message_generics ::wayland_core::Opcode for #message_name # message_generics {
                 const OPCODE: u16 = #message_opcode;
-            }
-
-            impl ::wayland_core::Arguments for #message_name {
-                #[inline(always)]
-                fn arguments<'msg>(&'msg self) -> impl Iterator<Item = ::wayland_core::Argument<'_>> {
-                    [ #(#args),* ].into_iter()
-                }
             }
         }
         .to_tokens(tokens);
@@ -493,18 +504,25 @@ impl Entry<'_>
 }
 
 #[derive(Debug, Clone)]
-pub struct ArgField<'a>(pub &'a schema::Arg);
+pub struct ArgField<'a>
+{
+    pub arg: &'a schema::Arg,
+    pub ctx: TypeContext,
+}
 
 impl ArgField<'_>
 {
     fn name(&self) -> Ident
     {
-        format_ident!("{}", self.0.name)
+        format_ident!("{}", self.arg.name)
     }
 
     fn typ(&self) -> Type<'_>
     {
-        Type(&self.0.typ)
+        Type {
+            typ: &self.arg.typ,
+            ctx: self.ctx,
+        }
     }
 }
 
@@ -520,45 +538,49 @@ impl ToTokens for ArgField<'_>
 }
 
 #[derive(Debug, Clone)]
-pub struct ArgWrap<'a>(pub &'a schema::Arg);
+pub struct Description(pub schema::Description);
 
-impl ToTokens for ArgWrap<'_>
+#[derive(Debug, Clone, Copy)]
+pub enum TypeContext
 {
-    fn to_tokens(&self, tokens: &mut TokenStream)
-    {
-        let name = ArgField(self.0).name();
-
-        match &self.0.typ {
-            schema::Type::Int { enu: None } => quote! { ::wayland_core::Argument::Int(self.#name) },
-            schema::Type::Int { enu: Some(_) } => quote! { ::wayland_core::Argument::Int(self.#name.value_signed()) },
-            schema::Type::Uint { enu: None } => quote! { ::wayland_core::Argument::Uint(self.#name) },
-            schema::Type::Uint { enu: Some(_) } => quote! { ::wayland_core::Argument::Uint(self.#name.value_unsigned()) },
-            schema::Type::Fixed => quote! { ::wayland_core::Argument::Fixed(self.#name) },
-            schema::Type::String { nullable: false } => quote! { ::wayland_core::Argument::String(self.#name.as_str()) },
-            schema::Type::String { nullable: true } => quote! { ::wayland_core::Argument::StringNullable(if let Some(s) = self.#name.as_ref() { Some(s.as_str()) } else { None }) },
-            schema::Type::Object { interface: None, nullable: false } => quote! { ::wayland_core::Argument::Object(self.#name) },
-            schema::Type::Object { interface: Some(_), nullable: false } => quote! { ::wayland_core::Argument::Object(self.#name.object()) },
-            schema::Type::Object { interface: None, nullable: true } => quote! { ::wayland_core::Argument::ObjectNullable(self.#name) },
-            schema::Type::Object { interface: Some(_), nullable: true } => quote! { ::wayland_core::Argument::ObjectNullable(if let Some(o) = self.#name { Some(o.object()) } else { None }) },
-            schema::Type::NewId { interface: None } => quote! { ::wayland_core::Argument::NewId(self.#name) },
-            schema::Type::NewId { interface: Some(_) } => quote! { ::wayland_core::Argument::NewId(self.#name.object()) },
-            schema::Type::Array => quote! { ::wayland_core::Argument::Array(&self.#name) },
-            schema::Type::Fd => quote! { unimplemented!() },
-        }.to_tokens(tokens);
-    }
+    Struct,
+    Function,
 }
 
 #[derive(Debug, Clone)]
-pub struct Description(pub schema::Description);
+pub struct Type<'a>
+{
+    pub typ: &'a schema::Type,
+    pub ctx: TypeContext,
+}
 
-#[derive(Debug, Clone)]
-pub struct Type<'a>(pub &'a schema::Type);
+impl Type<'_>
+{
+    fn string(&self) -> TokenStream
+    {
+        match self.ctx {
+            TypeContext::Struct => quote! { ::std::borrow::Cow<'a, str> },
+            TypeContext::Function => quote! { &str },
+        }
+    }
+
+    fn array(&self) -> TokenStream
+    {
+        match self.ctx {
+            TypeContext::Struct => quote! { ::std::borrow::Cow<'a, [u8]> },
+            TypeContext::Function => quote! { &[u8] },
+        }
+    }
+}
 
 impl ToTokens for Type<'_>
 {
     fn to_tokens(&self, tokens: &mut TokenStream)
     {
-        match self.0 {
+        let string = self.string();
+        let array = self.array();
+
+        match self.typ {
             schema::Type::Int { enu: None } => quote! { i32 },
             schema::Type::Uint { enu: None } => quote! { u32 },
             schema::Type::Int { enu: Some(enu) } | schema::Type::Uint { enu: Some(enu) } => {
@@ -566,8 +588,8 @@ impl ToTokens for Type<'_>
                 quote! { #enum_path }
             }
             schema::Type::Fixed => quote! { ::wayland_core::Fixed },
-            schema::Type::String { nullable: false } => quote! { String },
-            schema::Type::String { nullable: true } => quote! { Option<String> },
+            schema::Type::String { nullable: false } => quote! { #string },
+            schema::Type::String { nullable: true } => quote! { Option<#string> },
             t @ (schema::Type::Object { interface, .. } | schema::Type::NewId { interface }) => {
                 let nullable = match t {
                     schema::Type::Object { nullable, .. } => *nullable,
@@ -584,7 +606,7 @@ impl ToTokens for Type<'_>
                     true => quote! { Option<#arg_type> },
                 }
             }
-            schema::Type::Array => quote! { Vec<u8> },
+            schema::Type::Array => quote! { #array },
             schema::Type::Fd => quote! { ::wayland_core::Fd },
         }
         .to_tokens(tokens);
