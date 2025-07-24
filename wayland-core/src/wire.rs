@@ -445,13 +445,15 @@ fn write_sized_data<'buf>(data: &impl SizedData, mut buf: &'buf mut [u32]) -> &'
 {
     buf = (data.data_len() as u32).write(buf);
     let words = pad(data.data_len());
-    let dest = unsafe { slice::from_raw_parts_mut(buf.as_mut_ptr().cast(), data.data_len()) };
+    // Let Rust handle the bound checks.
+    let dest = &mut buf[..words];
+    let dest = unsafe { slice::from_raw_parts_mut(dest.as_mut_ptr().cast(), data.data_len()) };
     // When we write the bytes provided by `data` into `buf`, there may be untouched
     // bytes at the end of `buf` since the contents of `buf` are padded to 4
     // bytes. We set the last word to zero before writing bytes so that we do
     // not leak any data from the memory. Also, string type has
     // to be null-terminated.
-    buf[words] = 0;
+    buf[words - 1] = 0;
     data.write_data(dest);
     &mut buf[words..]
 }
