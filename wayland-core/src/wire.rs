@@ -12,6 +12,7 @@
 //! - File descriptors are transmitted via control messages (not in the data
 //!   buffer)
 
+use std::borrow::Cow;
 use std::ffi::CStr;
 use std::ffi::FromBytesWithNulError;
 use std::fmt;
@@ -249,6 +250,25 @@ impl Wire for String
     }
 }
 
+impl Wire for Cow<'_, str>
+{
+    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        self.as_ref().wire_write(buf)
+    }
+
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    {
+        let (buf, value) = <&str as Wire>::wire_read(buf)?;
+        Ok((buf, Cow::Borrowed(value)))
+    }
+
+    fn wire_size(&self) -> usize
+    {
+        self.as_ref().wire_size()
+    }
+}
+
 impl Wire for Fixed
 {
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
@@ -335,6 +355,25 @@ impl Wire for &[u8]
     fn wire_size(&self) -> usize
     {
         1 + pad(self.len())
+    }
+}
+
+impl Wire for Cow<'_, [u8]>
+{
+    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        self.as_ref().wire_write(buf)
+    }
+
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    {
+        let (buf, value) = <&[u8] as Wire>::wire_read(buf)?;
+        Ok((buf, Cow::Borrowed(value)))
+    }
+
+    fn wire_size(&self) -> usize
+    {
+        self.as_ref().wire_size()
     }
 }
 
