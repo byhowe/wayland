@@ -41,9 +41,13 @@ impl ToTokens for Type<'_>
         match self.typ {
             schema::Type::Int { enu: None } => quote! { i32 },
             schema::Type::Uint { enu: None } => quote! { u32 },
-            schema::Type::Int { enu: Some(enu) } | schema::Type::Uint { enu: Some(enu) } => {
+            t @ (schema::Type::Int { enu: Some(enu) } | schema::Type::Uint { enu: Some(enu) }) => {
                 let enum_path = Enum::resolve_path(&enu);
-                quote! { #enum_path }
+                match t {
+                    schema::Type::Int { .. } => quote! { ::wayland_core::Int<#enum_path> },
+                    schema::Type::Uint { .. } => quote! { ::wayland_core::Uint<#enum_path> },
+                    _ => unreachable!(),
+                }
             }
             schema::Type::Fixed => quote! { ::wayland_core::Fixed },
             schema::Type::String { nullable: false } => quote! { #string },

@@ -49,6 +49,7 @@ impl ToTokens for Enum<'_>
     fn to_tokens(&self, tokens: &mut TokenStream)
     {
         let enum_name = self.name();
+        let raw_enum_name = self.0.name.to_string();
 
         let entries = self.entries().map(|entry| {
             let name = entry.name();
@@ -67,11 +68,15 @@ impl ToTokens for Enum<'_>
                 }
 
                 impl ::core::convert::TryFrom<u32> for #enum_name {
-                    type Error = ();
+                    type Error = ::wayland_core::EnumParseError;
 
                     #[inline(always)]
                     fn try_from(value: u32) -> ::core::result::Result<Self, Self::Error> {
-                        #enum_name::from_bits(value).ok_or(())
+                        #enum_name::from_bits(value).ok_or(::wayland_core::EnumParseError {
+                            received: value,
+                            interface: __interface_root::INTERFACE_NAME,
+                            enu: #enum_name::ENUM_NAME,
+                        })
                     }
                 }
 
@@ -111,13 +116,17 @@ impl ToTokens for Enum<'_>
                     }
 
                     impl ::core::convert::TryFrom<u32> for #enum_name {
-                        type Error = ();
+                        type Error = ::wayland_core::EnumParseError;
 
                         #[inline(always)]
                         fn try_from(value: u32) -> ::core::result::Result<Self, Self::Error> {
                             match value {
                                 #(#try_from_arms,)*
-                                _ => Err(()),
+                                _ => Err(::wayland_core::EnumParseError {
+                                    received: value,
+                                    interface: __interface_root::INTERFACE_NAME,
+                                    enu: #enum_name::ENUM_NAME,
+                                }),
                             }
                         }
                     }
@@ -140,6 +149,23 @@ impl ToTokens for Enum<'_>
                             (self as u32).cast_signed()
                         }
                     }
+                }
+            }
+        }
+        .to_tokens(tokens);
+
+        quote! {
+            impl #enum_name {
+                pub(crate) const ENUM_NAME: &'static str = #raw_enum_name;
+            }
+
+            impl ::wayland_core::Enum for #enum_name {
+                fn int(self) -> i32 {
+                    self.value_signed()
+                }
+
+                fn uint(self) -> u32 {
+                    self.value_unsigned()
                 }
             }
         }

@@ -28,6 +28,7 @@ impl ToTokens for InterfaceModule<'_>
     fn to_tokens(&self, tokens: &mut TokenStream)
     {
         let interface_name = self.name();
+        let raw_interface_name = self.0.name.to_string();
 
         let interface_struct = InterfaceStruct(self.0);
 
@@ -40,6 +41,8 @@ impl ToTokens for InterfaceModule<'_>
                 use super::__protocol_root;
                 // refers to the current protocol intercace
                 use super::#interface_name as __interface_root;
+
+                pub(crate) const INTERFACE_NAME: &'static str = #raw_interface_name;
 
                 #(#enums)*
 
