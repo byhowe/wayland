@@ -45,15 +45,15 @@ impl Argument<'_>
     pub fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         match self {
-            Argument::Int(v) => v.write(buf),
-            Argument::Uint(v) => v.write(buf),
-            Argument::Fixed(v) => v.write(buf),
-            Argument::String(v) => v.write(buf),
-            Argument::StringNullable(v) => v.write(buf),
-            Argument::Object(v) => v.write(buf),
-            Argument::ObjectNullable(v) => v.write(buf),
-            Argument::NewId(v) => v.write(buf),
-            Argument::Array(v) => v.write(buf),
+            Argument::Int(v) => v.wire_write(buf),
+            Argument::Uint(v) => v.wire_write(buf),
+            Argument::Fixed(v) => v.wire_write(buf),
+            Argument::String(v) => v.wire_write(buf),
+            Argument::StringNullable(v) => v.wire_write(buf),
+            Argument::Object(v) => v.wire_write(buf),
+            Argument::ObjectNullable(v) => v.wire_write(buf),
+            Argument::NewId(v) => v.wire_write(buf),
+            Argument::Array(v) => v.wire_write(buf),
             // The Wire trait is not implemented by Fd, since it is not sent through the main
             // transport.
             Argument::Fd(_) => buf,

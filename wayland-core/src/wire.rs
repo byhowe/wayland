@@ -98,8 +98,8 @@ impl std::error::Error for WireError {}
 ///
 /// # Safety
 ///
-/// Implementations must ensure that `write()` uses exactly `size()` words,
-/// and that `read()` advances the buffer by the same amount.
+/// Implementations must ensure that `wire_write()` uses exactly `wire_size()`
+/// words, and that `wire_read()` advances the buffer by the same amount.
 pub trait Wire: Sized
 {
     /// Write this value to the buffer, returning the remaining buffer slice.
@@ -107,9 +107,9 @@ pub trait Wire: Sized
     /// # Panics
     ///
     /// Panics if the buffer is too small. Callers should ensure the buffer has
-    /// enough space by using `size()` or similar methods.
+    /// enough space by using `wire_size()` or similar methods.
     #[must_use]
-    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32];
+    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32];
 
     /// Read a value from the buffer, returning the value and the remaining
     /// buffer.
@@ -119,26 +119,26 @@ pub trait Wire: Sized
     /// - The data is malformed (e.g., string is not null-terminated)
     /// - The data is semantically invalid (e.g., zero object ID)
     #[must_use]
-    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>;
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>;
 
     /// Returns the size in words (number of `u32`) this value will occupy when
     /// written to the socket. Importantly, a file descriptor has zero size
     /// since its value is transmitted through control message.
     #[must_use]
-    fn size(&self) -> usize;
+    fn wire_size(&self) -> usize;
 }
 
 impl Wire for i32
 {
     #[inline(always)]
-    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         buf[0] = self.cast_unsigned();
         &mut buf[1..]
     }
 
     #[inline(always)]
-    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
         buf.get(0)
             .map(|v| (&buf[1..], v.cast_signed()))
@@ -149,7 +149,7 @@ impl Wire for i32
     }
 
     #[inline(always)]
-    fn size(&self) -> usize
+    fn wire_size(&self) -> usize
     {
         1
     }
@@ -158,14 +158,14 @@ impl Wire for i32
 impl Wire for u32
 {
     #[inline(always)]
-    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         buf[0] = *self;
         &mut buf[1..]
     }
 
     #[inline(always)]
-    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
         buf.get(0)
             .map(|v| (&buf[1..], *v))
@@ -176,7 +176,7 @@ impl Wire for u32
     }
 
     #[inline(always)]
-    fn size(&self) -> usize
+    fn wire_size(&self) -> usize
     {
         1
     }
@@ -184,14 +184,14 @@ impl Wire for u32
 
 impl Wire for &CStr
 {
-    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         write_sized_data(self, buf)
     }
 
-    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
-        let (buf, bytes) = <&[u8] as Wire>::read(buf)?;
+        let (buf, bytes) = <&[u8] as Wire>::wire_read(buf)?;
 
         // NOTE: This only returns an error if the string is not properly
         // null-terminated. Otherwise, it does not check for UTF-8 errors. The
@@ -204,7 +204,7 @@ impl Wire for &CStr
         Ok((buf, value))
     }
 
-    fn size(&self) -> usize
+    fn wire_size(&self) -> usize
     {
         1 + pad(self.to_bytes_with_nul().len())
     }
@@ -212,19 +212,19 @@ impl Wire for &CStr
 
 impl Wire for &str
 {
-    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         write_sized_data(self, buf)
     }
 
-    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
-        let (buf, value) = <&CStr as Wire>::read(buf)?;
+        let (buf, value) = <&CStr as Wire>::wire_read(buf)?;
         // NOTE: `to_str` throws an error if the &CStr is not proper UTF-8.
         Ok((buf, value.to_str()?))
     }
 
-    fn size(&self) -> usize
+    fn wire_size(&self) -> usize
     {
         1 + pad(self.len() + 1)
     }
@@ -234,41 +234,41 @@ impl Wire for &str
 impl Wire for String
 {
     #[inline(always)]
-    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
-        self.as_str().write(buf)
+        self.as_str().wire_write(buf)
     }
 
     #[inline(always)]
-    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
-        let (buf, value) = <&CStr as Wire>::read(buf)?;
+        let (buf, value) = <&CStr as Wire>::wire_read(buf)?;
         Ok((buf, value.to_str()?.to_string()))
     }
 
     #[inline(always)]
-    fn size(&self) -> usize
+    fn wire_size(&self) -> usize
     {
-        self.as_str().size()
+        self.as_str().wire_size()
     }
 }
 
 impl Wire for Fixed
 {
     #[inline(always)]
-    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
-        i32::write(&self.to_bits(), buf)
+        i32::wire_write(&self.to_bits(), buf)
     }
 
     #[inline(always)]
-    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
-        i32::read(buf).map(|(buf, value)| (buf, Fixed::from_bits(value)))
+        i32::wire_read(buf).map(|(buf, value)| (buf, Fixed::from_bits(value)))
     }
 
     #[inline(always)]
-    fn size(&self) -> usize
+    fn wire_size(&self) -> usize
     {
         1
     }
@@ -277,22 +277,22 @@ impl Wire for Fixed
 impl Wire for Object
 {
     #[inline(always)]
-    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
-        self.get().write(buf)
+        self.get().wire_write(buf)
     }
 
     #[inline(always)]
-    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
-        let (buf, id) = u32::read(buf)?;
+        let (buf, id) = u32::wire_read(buf)?;
         Self::new(id)
             .map(|value| (buf, value))
             .ok_or(WireError::Malformed)
     }
 
     #[inline(always)]
-    fn size(&self) -> usize
+    fn wire_size(&self) -> usize
     {
         1
     }
@@ -301,37 +301,37 @@ impl Wire for Object
 impl Wire for Vec<u8>
 {
     #[inline(always)]
-    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
-        self.as_slice().write(buf)
+        self.as_slice().wire_write(buf)
     }
 
     #[inline(always)]
-    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
-        let (buf, value) = <&[u8] as Wire>::read(buf)?;
+        let (buf, value) = <&[u8] as Wire>::wire_read(buf)?;
         Ok((buf, value.to_vec()))
     }
 
     #[inline(always)]
-    fn size(&self) -> usize
+    fn wire_size(&self) -> usize
     {
-        self.as_slice().size()
+        self.as_slice().wire_size()
     }
 }
 
 impl Wire for &[u8]
 {
     #[inline(always)]
-    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         write_sized_data(self, buf)
     }
 
     #[inline(always)]
-    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
-        let (buf, size) = u32::read(buf)?;
+        let (buf, size) = u32::wire_read(buf)?;
         let words = pad(size as usize);
         if buf.len() < words {
             return Err(WireError::UnexpectedEof {
@@ -344,7 +344,7 @@ impl Wire for &[u8]
     }
 
     #[inline(always)]
-    fn size(&self) -> usize
+    fn wire_size(&self) -> usize
     {
         1 + pad(self.len())
     }
@@ -353,19 +353,19 @@ impl Wire for &[u8]
 impl Wire for Header
 {
     #[inline(always)]
-    fn write<'buf>(&self, mut buf: &'buf mut [u32]) -> &'buf mut [u32]
+    fn wire_write<'buf>(&self, mut buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         // Pack size and opcode into a single 32-bit word: [size:16][opcode:16]
         let word = ((self.size as u32) << 16) | (self.opcode as u32);
-        buf = self.object.write(buf);
-        word.write(buf)
+        buf = self.object.wire_write(buf);
+        word.wire_write(buf)
     }
 
     #[inline(always)]
-    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
-        let (buf, object) = Object::read(buf)?;
-        let (buf, word) = u32::read(buf)?;
+        let (buf, object) = Object::wire_read(buf)?;
+        let (buf, word) = u32::wire_read(buf)?;
         // Unpack the size and opcode from the combined word
         let header = Header {
             object,
@@ -376,7 +376,7 @@ impl Wire for Header
     }
 
     #[inline(always)]
-    fn size(&self) -> usize
+    fn wire_size(&self) -> usize
     {
         2
     }
@@ -387,30 +387,30 @@ where
     T: Wire,
 {
     #[inline(always)]
-    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         match self {
-            None => Wire::write(&0u32, buf),
-            Some(value) => Wire::write(value, buf),
+            None => Wire::wire_write(&0u32, buf),
+            Some(value) => Wire::wire_write(value, buf),
         }
     }
 
     #[inline(always)]
-    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
-        let (_, value) = u32::read(buf)?;
+        let (_, value) = u32::wire_read(buf)?;
         match value {
             0 => Ok((&buf[1..], None)),
-            _ => T::read(buf).map(|(buf, value)| (buf, Some(value))),
+            _ => T::wire_read(buf).map(|(buf, value)| (buf, Some(value))),
         }
     }
 
     #[inline(always)]
-    fn size(&self) -> usize
+    fn wire_size(&self) -> usize
     {
         match self {
             None => 1,
-            Some(value) => Wire::size(value),
+            Some(value) => Wire::wire_size(value),
         }
     }
 }
@@ -482,7 +482,7 @@ impl SizedData for &str
 #[inline(always)]
 fn write_sized_data<'buf>(data: &impl SizedData, mut buf: &'buf mut [u32]) -> &'buf mut [u32]
 {
-    buf = (data.data_len() as u32).write(buf);
+    buf = (data.data_len() as u32).wire_write(buf);
     let words = pad(data.data_len());
     // Let Rust handle the bound checks.
     let dest = &mut buf[..words];

@@ -30,9 +30,9 @@ fn debug_buf(buf: &[u32])
 
 fn read_global(buf: &[u32]) -> Result<Global, WireError>
 {
-    let (buf, name) = u32::read(buf)?;
-    let (buf, interface) = String::read(buf)?;
-    let (buf, version) = u32::read(buf)?;
+    let (buf, name) = u32::wire_read(buf)?;
+    let (buf, interface) = String::wire_read(buf)?;
+    let (buf, version) = u32::wire_read(buf)?;
     let _ = buf;
 
     Ok(Global {
@@ -44,7 +44,7 @@ fn read_global(buf: &[u32]) -> Result<Global, WireError>
 
 fn read_done(buf: &[u32]) -> Result<Done, WireError>
 {
-    let (buf, callback_data) = u32::read(buf)?;
+    let (buf, callback_data) = u32::wire_read(buf)?;
     let _ = buf;
 
     Ok(Done { callback_data })
@@ -52,9 +52,9 @@ fn read_done(buf: &[u32]) -> Result<Done, WireError>
 
 fn read_error(buf: &[u32]) -> Result<Error, WireError>
 {
-    let (buf, object_id) = Object::read(buf)?;
-    let (buf, code) = u32::read(buf)?;
-    let (buf, message) = String::read(buf)?;
+    let (buf, object_id) = Object::wire_read(buf)?;
+    let (buf, code) = u32::wire_read(buf)?;
+    let (buf, message) = String::wire_read(buf)?;
     let _ = buf;
 
     Ok(Error {
@@ -107,7 +107,7 @@ fn main()
             }
             _ => {}
         }
-        let (_, header) = Header::read(&header).unwrap();
+        let (_, header) = Header::wire_read(&header).unwrap();
 
         assert!(header.size % 4 == 0, "message must be 4 bytes aligned");
         assert!(

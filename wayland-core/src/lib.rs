@@ -34,6 +34,7 @@ pub fn bytes_mut<'buf>(buf: &'buf mut [u32]) -> &'buf mut [u8]
 }
 
 #[inline(always)]
-pub(crate) fn pad(size: usize) -> usize {
+pub(crate) fn pad(size: usize) -> usize
+{
     (size + 3) / 4
 }

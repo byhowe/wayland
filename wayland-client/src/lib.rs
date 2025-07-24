@@ -69,7 +69,7 @@ impl Connection
         let header = Header::new(object.into(), size as u16 * 4, M::OPCODE);
 
         prepare_buf(&mut self.buf, size);
-        let buf = header.write(&mut self.buf);
+        let buf = header.wire_write(&mut self.buf);
         msg.write(buf);
 
         self.stream.write_all(bytes(&self.buf))?;
