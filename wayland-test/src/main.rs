@@ -14,10 +14,9 @@ use wayland_client::protocol::wayland::wl_display::request::GetRegistry;
 use wayland_client::protocol::wayland::wl_display::request::Sync;
 use wayland_client::protocol::wayland::wl_registry::event::Global;
 use wayland_core::Header;
-use wayland_core::Message;
 use wayland_core::Object;
+use wayland_core::Opcode;
 use wayland_core::Wire;
-use wayland_core::WireError;
 use wayland_core::bytes_mut;
 use wayland_core::prepare_buf;
 
@@ -26,42 +25,6 @@ fn debug_buf(buf: &[u32])
     buf.iter()
         .enumerate()
         .for_each(|(i, word)| println!("word[{:02}] = {:08x}", i, word));
-}
-
-fn read_global(buf: &[u32]) -> Result<Global, WireError>
-{
-    let (buf, name) = u32::wire_read(buf)?;
-    let (buf, interface) = String::wire_read(buf)?;
-    let (buf, version) = u32::wire_read(buf)?;
-    let _ = buf;
-
-    Ok(Global {
-        name,
-        interface,
-        version,
-    })
-}
-
-fn read_done(buf: &[u32]) -> Result<Done, WireError>
-{
-    let (buf, callback_data) = u32::wire_read(buf)?;
-    let _ = buf;
-
-    Ok(Done { callback_data })
-}
-
-fn read_error(buf: &[u32]) -> Result<Error, WireError>
-{
-    let (buf, object_id) = Object::wire_read(buf)?;
-    let (buf, code) = u32::wire_read(buf)?;
-    let (buf, message) = String::wire_read(buf)?;
-    let _ = buf;
-
-    Ok(Error {
-        object_id,
-        code,
-        message: message.to_string(),
-    })
 }
 
 fn main()
@@ -120,17 +83,17 @@ fn main()
 
         match header.opcode {
             wl::wl_registry::event::Global::OPCODE if header.object == id_registry.into() => {
-                let evt = read_global(&buf);
+                let evt = Global::wire_read(&buf);
                 println!("{:?}", evt);
             }
             wl::wl_callback::event::Done::OPCODE if header.object == id_callback.into() => {
-                let evt = read_done(&buf);
+                let evt = Done::wire_read(&buf);
                 println!("{:?}", evt);
 
                 break;
             }
             wl::wl_display::event::Error::OPCODE if header.object == id_display.into() => {
-                let evt = read_error(&buf);
+                let evt = Error::wire_read(&buf);
                 println!("{:?}", evt);
             }
             _ => eprintln!(

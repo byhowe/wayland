@@ -9,6 +9,7 @@ use thiserror::Error;
 use wayland_core::Header;
 use wayland_core::Message;
 use wayland_core::Object;
+use wayland_core::Opcode;
 use wayland_core::Wire;
 use wayland_core::bytes;
 use wayland_core::prepare_buf;
@@ -59,18 +60,18 @@ impl Connection
         })
     }
 
-    pub fn send_message<O: Into<Object>, M: Message>(
+    pub fn send_message<O: Into<Object>, M: Wire + Opcode>(
         &mut self,
         object: O,
         msg: &M,
     ) -> io::Result<()>
     {
-        let size = 2 + msg.size();
+        let size = 2 + msg.wire_size();
         let header = Header::new(object.into(), size as u16 * 4, M::OPCODE);
 
         prepare_buf(&mut self.buf, size);
         let buf = header.wire_write(&mut self.buf);
-        msg.write(buf);
+        _ = msg.wire_write(buf);
 
         self.stream.write_all(bytes(&self.buf))?;
 
