@@ -43,20 +43,65 @@ impl ToTokens for MessageStruct<'_>
     {
         let message_name = self.name();
         let message_generics = self.generics();
-        let message_args = self.0.args.iter().map(|arg| ArgField {
-            arg,
-            ctx: TypeContext::Struct,
+        // FIX: temporarily disable fd.
+        let message_fields = self.0.args.iter().filter_map(|arg| match arg.typ {
+            schema::Type::Fd => None,
+            _ => Some(ArgField {
+                arg,
+                ctx: TypeContext::Struct,
+            }),
         });
         let message_opcode = self.0.opcode;
+
+        let wire_arguments = message_fields
+            .clone()
+            .filter_map(|field| {
+                let arg_name = field.name();
+                match field.arg.typ {
+                    schema::Type::Fd => None,
+                    _ => Some(quote! { #arg_name }),
+                }
+            })
+            .collect::<Vec<_>>();
+        let wire_argument_types = message_fields
+            .clone()
+            .filter_map(|field| match &field.arg.typ {
+                schema::Type::Fd => None,
+                t => {
+                    let type_path = Type {
+                        typ: t,
+                        ctx: TypeContext::Struct,
+                    };
+                    Some(quote! { <#type_path as ::wayland_core::Wire> })
+                }
+            });
 
         quote! {
             #[derive(Debug, Clone, PartialEq, Eq)]
             pub struct #message_name #message_generics {
-                #(pub #message_args,)*
+                #(pub #message_fields,)*
             }
 
             impl #message_generics ::wayland_core::Opcode for #message_name #message_generics {
                 const OPCODE: u16 = #message_opcode;
+            }
+
+            impl #message_generics ::wayland_core::Wire for #message_name #message_generics {
+                fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32] {
+                    #(let buf = self.#wire_arguments.wire_write(buf);)*
+                    buf
+                }
+
+                fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), ::wayland_core::WireError> {
+                    #(let (buf, #wire_arguments) = #wire_argument_types::wire_read(buf)?;)*
+                    Ok((buf, #message_name {
+                        #(#wire_arguments,)*
+                    }))
+                }
+
+                fn wire_size(&self) -> usize {
+                    0 #(+ self.#wire_arguments.wire_size())*
+                }
             }
         }
         .to_tokens(tokens);

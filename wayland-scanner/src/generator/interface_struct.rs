@@ -72,6 +72,21 @@ impl ToTokens for InterfaceStruct<'_>
                 }
             }
 
+            impl ::wayland_core::Wire for #struct_name {
+                fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32] {
+                    self.object().wire_write(buf)
+                }
+
+                fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), ::wayland_core::WireError> {
+                    let (buf, object) = ::wayland_core::Object::wire_read(buf)?;
+                    Ok((buf, Self::new(object)))
+                }
+
+                fn wire_size(&self) -> usize {
+                    self.object().wire_size()
+                }
+            }
+
             impl #struct_name {
                 #[inline(always)]
                 pub const fn object(self) -> ::wayland_core::Object {
