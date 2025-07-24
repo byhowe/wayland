@@ -2,12 +2,10 @@ use std::slice;
 
 pub mod meta;
 
-mod argument;
 mod message;
 mod primitive;
 mod wire;
 
-pub use argument::*;
 pub use message::*;
 pub use primitive::*;
 pub use wire::*;
