@@ -1,3 +1,17 @@
+//! Wire format serialization for Wayland protocol types.
+//!
+//! This module implements the `Wire` trait for Wayland protocol primitive
+//! types, handling conversion between Rust types and the binary wire format
+//! used in Wayland messages.
+//!
+//! # Wire Format
+//!
+//! - All values are serialized as 32-bit words in host byte order
+//! - Strings and arrays are prefixed with their length in bytes
+//! - Data is padded to 4-byte boundaries
+//! - File descriptors are transmitted via control messages (not in the data
+//!   buffer)
+
 use std::ffi::CStr;
 use std::ffi::FromBytesWithNulError;
 use std::fmt;
@@ -14,18 +28,22 @@ use crate::pad;
 pub enum WireError
 {
     /// Not enough bytes available to read the complete type.
+    ///
+    /// This occurs when trying to read a value that extends beyond the
+    /// available buffer space.
     UnexpectedEof
     {
-        /// Number of words (`u32`) needed.
+        /// Number of 32-bit words needed to complete the read.
         needed: usize,
-        /// Number of words (`u32`) available.
+        /// Number of 32-bit words actually available in the buffer.
         available: usize,
     },
     /// Improperly serialized type.
     ///
     /// Some errors include:
-    /// - String is not properly null-terminated.
-    /// - Object ID is zero when it shouldn't be.
+    /// - Object ID is zero when it shouldn't be
+    /// - String is not properly null-terminated
+    /// - Invalid UTF-8 in a string that requires valid UTF-8
     Malformed,
 }
 
@@ -66,6 +84,22 @@ impl From<Utf8Error> for WireError
 impl std::error::Error for WireError {}
 
 /// Trait for types that can be serialized to and from Wayland wire format.
+///
+/// The Wayland protocol uses a binary wire format where all data is aligned to
+/// 32-bit word boundaries. This trait provides serialization and
+/// deserialization for protocol types.
+///
+/// # Wire Format Rules
+///
+/// - All data is stored as 32-bit words (`u32`)
+/// - Strings and byte arrays are length-prefixed
+/// - All data is padded to 4-byte boundaries
+/// - Object IDs must be non-zero
+///
+/// # Safety
+///
+/// Implementations must ensure that `write()` uses exactly `size()` words,
+/// and that `read()` advances the buffer by the same amount.
 pub trait Wire: Sized
 {
     /// Write this value to the buffer, returning the remaining buffer slice.
@@ -321,6 +355,7 @@ impl Wire for Header
     #[inline(always)]
     fn write<'buf>(&self, mut buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
+        // Pack size and opcode into a single 32-bit word: [size:16][opcode:16]
         let word = ((self.size as u32) << 16) | (self.opcode as u32);
         buf = self.object.write(buf);
         word.write(buf)
@@ -331,10 +366,11 @@ impl Wire for Header
     {
         let (buf, object) = Object::read(buf)?;
         let (buf, word) = u32::read(buf)?;
+        // Unpack the size and opcode from the combined word
         let header = Header {
             object,
-            size: ((word as u32) >> 16) as u16,
-            opcode: (word & 0xFFFF) as u16,
+            size: ((word as u32) >> 16) as u16, // extract upper 16 bits
+            opcode: (word & 0xFFFF) as u16,     // extract lower 16 bits
         };
         Ok((buf, header))
     }
@@ -379,10 +415,13 @@ where
     }
 }
 
-/// Helper trait to help with sized types such as strings and arrays.
+/// Helper trait for types that can be written as sized data (length + content).
 trait SizedData
 {
     /// Length required by the object in bytes, without the size field.
+    ///
+    /// For strings, this includes the null terminator.
+    /// For byte arrays, this is just the array length.
     fn data_len(&self) -> usize;
 
     /// Write the contents of `self` into `dest`.
