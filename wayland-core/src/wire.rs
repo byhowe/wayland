@@ -130,14 +130,12 @@ pub trait Wire: Sized
 
 impl Wire for i32
 {
-    #[inline(always)]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         buf[0] = self.cast_unsigned();
         &mut buf[1..]
     }
 
-    #[inline(always)]
     fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
         buf.get(0)
@@ -148,7 +146,7 @@ impl Wire for i32
             })
     }
 
-    #[inline(always)]
+    #[inline]
     fn wire_size(&self) -> usize
     {
         1
@@ -157,14 +155,12 @@ impl Wire for i32
 
 impl Wire for u32
 {
-    #[inline(always)]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         buf[0] = *self;
         &mut buf[1..]
     }
 
-    #[inline(always)]
     fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
         buf.get(0)
@@ -175,7 +171,7 @@ impl Wire for u32
             })
     }
 
-    #[inline(always)]
+    #[inline]
     fn wire_size(&self) -> usize
     {
         1
@@ -204,6 +200,7 @@ impl Wire for &CStr
         Ok((buf, value))
     }
 
+    #[inline]
     fn wire_size(&self) -> usize
     {
         1 + pad(self.to_bytes_with_nul().len())
@@ -224,6 +221,7 @@ impl Wire for &str
         Ok((buf, value.to_str()?))
     }
 
+    #[inline]
     fn wire_size(&self) -> usize
     {
         1 + pad(self.len() + 1)
@@ -233,20 +231,18 @@ impl Wire for &str
 // FIX: Do we need this impl? I think it is good to have.
 impl Wire for String
 {
-    #[inline(always)]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         self.as_str().wire_write(buf)
     }
 
-    #[inline(always)]
     fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
         let (buf, value) = <&CStr as Wire>::wire_read(buf)?;
         Ok((buf, value.to_str()?.to_string()))
     }
 
-    #[inline(always)]
+    #[inline]
     fn wire_size(&self) -> usize
     {
         self.as_str().wire_size()
@@ -255,19 +251,17 @@ impl Wire for String
 
 impl Wire for Fixed
 {
-    #[inline(always)]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         i32::wire_write(&self.to_bits(), buf)
     }
 
-    #[inline(always)]
     fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
         i32::wire_read(buf).map(|(buf, value)| (buf, Fixed::from_bits(value)))
     }
 
-    #[inline(always)]
+    #[inline]
     fn wire_size(&self) -> usize
     {
         1
@@ -276,13 +270,11 @@ impl Wire for Fixed
 
 impl Wire for Object
 {
-    #[inline(always)]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         self.get().wire_write(buf)
     }
 
-    #[inline(always)]
     fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
         let (buf, id) = u32::wire_read(buf)?;
@@ -291,7 +283,7 @@ impl Wire for Object
             .ok_or(WireError::Malformed)
     }
 
-    #[inline(always)]
+    #[inline]
     fn wire_size(&self) -> usize
     {
         1
@@ -300,20 +292,18 @@ impl Wire for Object
 
 impl Wire for Vec<u8>
 {
-    #[inline(always)]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         self.as_slice().wire_write(buf)
     }
 
-    #[inline(always)]
     fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
         let (buf, value) = <&[u8] as Wire>::wire_read(buf)?;
         Ok((buf, value.to_vec()))
     }
 
-    #[inline(always)]
+    #[inline]
     fn wire_size(&self) -> usize
     {
         self.as_slice().wire_size()
@@ -322,13 +312,11 @@ impl Wire for Vec<u8>
 
 impl Wire for &[u8]
 {
-    #[inline(always)]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         write_sized_data(self, buf)
     }
 
-    #[inline(always)]
     fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
         let (buf, size) = u32::wire_read(buf)?;
@@ -343,7 +331,7 @@ impl Wire for &[u8]
         Ok((&buf[words..], value))
     }
 
-    #[inline(always)]
+    #[inline]
     fn wire_size(&self) -> usize
     {
         1 + pad(self.len())
@@ -352,7 +340,6 @@ impl Wire for &[u8]
 
 impl Wire for Header
 {
-    #[inline(always)]
     fn wire_write<'buf>(&self, mut buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         // Pack size and opcode into a single 32-bit word: [size:16][opcode:16]
@@ -361,7 +348,6 @@ impl Wire for Header
         word.wire_write(buf)
     }
 
-    #[inline(always)]
     fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
         let (buf, object) = Object::wire_read(buf)?;
@@ -375,7 +361,7 @@ impl Wire for Header
         Ok((buf, header))
     }
 
-    #[inline(always)]
+    #[inline]
     fn wire_size(&self) -> usize
     {
         2
@@ -386,7 +372,6 @@ impl<T> Wire for Option<T>
 where
     T: Wire,
 {
-    #[inline(always)]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         match self {
@@ -395,7 +380,6 @@ where
         }
     }
 
-    #[inline(always)]
     fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
         let (_, value) = u32::wire_read(buf)?;
@@ -405,7 +389,7 @@ where
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn wire_size(&self) -> usize
     {
         match self {
@@ -433,13 +417,13 @@ trait SizedData
 
 impl SizedData for &[u8]
 {
-    #[inline(always)]
+    #[inline]
     fn data_len(&self) -> usize
     {
         self.len()
     }
 
-    #[inline(always)]
+    #[inline]
     fn write_data(&self, dest: &mut [u8])
     {
         dest.copy_from_slice(self);
@@ -448,13 +432,13 @@ impl SizedData for &[u8]
 
 impl SizedData for &CStr
 {
-    #[inline(always)]
+    #[inline]
     fn data_len(&self) -> usize
     {
         self.to_bytes_with_nul().len()
     }
 
-    #[inline(always)]
+    #[inline]
     fn write_data(&self, dest: &mut [u8])
     {
         dest.copy_from_slice(self.to_bytes_with_nul());
@@ -463,13 +447,13 @@ impl SizedData for &CStr
 
 impl SizedData for &str
 {
-    #[inline(always)]
+    #[inline]
     fn data_len(&self) -> usize
     {
         self.len() + 1
     }
 
-    #[inline(always)]
+    #[inline]
     fn write_data(&self, dest: &mut [u8])
     {
         dest[..self.len()].copy_from_slice(self.as_bytes());
@@ -479,7 +463,7 @@ impl SizedData for &str
     }
 }
 
-#[inline(always)]
+#[inline]
 fn write_sized_data<'buf>(data: &impl SizedData, mut buf: &'buf mut [u32]) -> &'buf mut [u32]
 {
     buf = (data.data_len() as u32).wire_write(buf);
