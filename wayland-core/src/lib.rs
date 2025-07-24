@@ -32,3 +32,8 @@ pub fn bytes_mut<'buf>(buf: &'buf mut [u32]) -> &'buf mut [u8]
 {
     unsafe { slice::from_raw_parts_mut(buf.as_mut_ptr().cast(), buf.len() * 4) }
 }
+
+#[inline(always)]
+pub(crate) fn pad(size: usize) -> usize {
+    (size + 3) / 4
+}

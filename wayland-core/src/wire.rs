@@ -1,203 +1,457 @@
-use std::borrow::Cow;
 use std::ffi::CStr;
-use std::ptr;
+use std::ffi::FromBytesWithNulError;
+use std::fmt;
+use std::slice;
+use std::str::Utf8Error;
 
 use crate::Fixed;
 use crate::Header;
 use crate::Object;
+use crate::pad;
 
-#[inline(always)]
-#[must_use]
-pub fn write_int<'buf>(buf: &'buf mut [u32], value: i32) -> &'buf mut [u32]
+/// Errors that can happen during deserialization from the wire format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WireError
 {
-    buf[0] = value.cast_unsigned();
-    &mut buf[1..]
+    /// Not enough bytes available to read the complete type.
+    UnexpectedEof
+    {
+        /// Number of words (`u32`) needed.
+        needed: usize,
+        /// Number of words (`u32`) available.
+        available: usize,
+    },
+    /// Improperly serialized type.
+    ///
+    /// Some errors include:
+    /// - String is not properly null-terminated.
+    /// - Object ID is zero when it shouldn't be.
+    Malformed,
 }
 
-#[inline(always)]
-#[must_use]
-pub fn write_uint<'buf>(buf: &'buf mut [u32], value: u32) -> &'buf mut [u32]
+impl fmt::Display for WireError
 {
-    buf[0] = value;
-    &mut buf[1..]
-}
-
-#[inline(always)]
-#[must_use]
-pub fn write_fixed<'buf>(buf: &'buf mut [u32], value: Fixed) -> &'buf mut [u32]
-{
-    buf[0] = value.cast_unsigned();
-    &mut buf[1..]
-}
-
-#[inline(always)]
-#[must_use]
-pub fn write_string<'buf, S: AsRef<str>>(buf: &'buf mut [u32], value: S) -> &'buf mut [u32]
-{
-    let value = value.as_ref();
-    let size = value.len() + 1; // +1 for the null byte
-    let buf = write_uint(buf, size as u32);
-    // PERF: can we use copy_nonoverlapping here?
-    // FIXME: we do not do checks on the size of the buffer.
-    unsafe { ptr::copy(value.as_ptr(), buf.as_mut_ptr().cast(), value.len()) };
-    unsafe { *buf.as_mut_ptr().cast::<u8>().add(size) = 0 };
-    let padding = (size + 3) / 4;
-    &mut buf[padding..]
-}
-
-#[inline(always)]
-#[must_use]
-pub fn write_string_nullable<'buf, S: AsRef<str>>(
-    buf: &'buf mut [u32],
-    value: Option<S>,
-) -> &'buf mut [u32]
-{
-    match value {
-        Some(value) => write_string(buf, value),
-        None => write_uint(buf, 0),
-    }
-}
-
-#[inline(always)]
-#[must_use]
-pub fn write_object<'buf, T: Into<Object>>(buf: &'buf mut [u32], value: T) -> &'buf mut [u32]
-{
-    buf[0] = value.into().get();
-    &mut buf[1..]
-}
-
-#[inline(always)]
-#[must_use]
-pub fn write_object_nullable<'buf, T: Into<Object>>(
-    buf: &'buf mut [u32],
-    value: Option<T>,
-) -> &'buf mut [u32]
-{
-    buf[0] = value.map(|val| val.into().get()).unwrap_or(0);
-    &mut buf[1..]
-}
-
-#[inline(always)]
-#[must_use]
-pub fn write_new_id<'buf>(buf: &'buf mut [u32], value: Object) -> &'buf mut [u32]
-{
-    buf[0] = value.get();
-    &mut buf[1..]
-}
-
-#[allow(unused_variables)]
-#[inline(always)]
-#[must_use]
-pub fn write_array<'buf>(buf: &'buf mut [u32], value: u32) -> &'buf mut [u32]
-{
-    unimplemented!()
-}
-
-#[inline(always)]
-#[must_use]
-pub fn write_header<'buf>(buf: &'buf mut [u32], value: Header) -> &'buf mut [u32]
-{
-    let buf = write_object(buf, value.object);
-    let buf = write_uint(buf, ((value.size as u32) << 16) | (value.opcode as u32));
-    buf
-}
-
-#[inline(always)]
-#[must_use]
-pub fn read_int<'buf>(buf: &'buf [u32]) -> (&'buf [u32], i32)
-{
-    (&buf[1..], buf[0].cast_signed())
-}
-
-#[inline(always)]
-#[must_use]
-pub fn read_uint<'buf>(buf: &'buf [u32]) -> (&'buf [u32], u32)
-{
-    (&buf[1..], buf[0])
-}
-
-#[inline(always)]
-#[must_use]
-pub fn read_fixed<'buf>(buf: &'buf [u32]) -> (&'buf [u32], Fixed)
-{
-    (&buf[1..], buf[0].cast_signed())
-}
-
-#[inline(always)]
-#[must_use]
-pub(crate) fn read_string_sized<'buf>(
-    buf: &'buf [u32],
-    size: usize,
-) -> (&'buf [u32], Cow<'buf, str>)
-{
-    // FIXME: check the size of the buf before creating a slice with unknown size.
-    // we can't willy-nilly trust the size returned by the compositor.
-    let slice = unsafe { std::slice::from_raw_parts(buf.as_ptr().cast(), size) };
-    let string = CStr::from_bytes_with_nul(slice).unwrap().to_string_lossy();
-    let padding = (size + 3) / 4;
-    (&buf[padding..], string)
-}
-
-#[inline(always)]
-#[must_use]
-pub fn read_string<'buf>(buf: &'buf [u32]) -> (&'buf [u32], Cow<'buf, str>)
-{
-    let (buf, size) = read_uint(buf);
-    read_string_sized(buf, size as usize)
-}
-
-#[inline(always)]
-#[must_use]
-pub fn read_string_nullable<'buf>(buf: &'buf [u32]) -> (&'buf [u32], Option<Cow<'buf, str>>)
-{
-    match read_uint(buf) {
-        (buf, 0) => (buf, None),
-        (buf, size) => {
-            let (buf, string) = read_string_sized(buf, size as usize);
-            (buf, Some(string))
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+    {
+        match self {
+            WireError::UnexpectedEof { needed, available } => write!(
+                f,
+                "unexpected end of buffer: needed {} words ({} bytes), got {} words ({} bytes)",
+                needed,
+                needed * 4,
+                available,
+                available * 4
+            ),
+            WireError::Malformed => write!(f, "malformed value read from the buffer"),
         }
     }
 }
 
-#[inline(always)]
-#[must_use]
-pub fn read_object<'buf>(buf: &'buf [u32]) -> (&'buf [u32], Object)
+impl From<FromBytesWithNulError> for WireError
 {
-    (&buf[1..], Object::new(buf[0]).unwrap())
+    fn from(_value: FromBytesWithNulError) -> Self
+    {
+        WireError::Malformed
+    }
+}
+
+impl From<Utf8Error> for WireError
+{
+    fn from(_value: Utf8Error) -> Self
+    {
+        WireError::Malformed
+    }
+}
+
+impl std::error::Error for WireError {}
+
+/// Trait for types that can be serialized to and from Wayland wire format.
+pub trait Wire: Sized
+{
+    /// Write this value to the buffer, returning the remaining buffer slice.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the buffer is too small. Callers should ensure the buffer has
+    /// enough space by using `size()` or similar methods.
+    #[must_use]
+    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32];
+
+    /// Read a value from the buffer, returning the value and the remaining
+    /// buffer.
+    ///
+    /// Returns an error if:
+    /// - The buffer does not contain enough data
+    /// - The data is malformed (e.g., string is not null-terminated)
+    /// - The data is semantically invalid (e.g., zero object ID)
+    #[must_use]
+    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>;
+
+    /// Returns the size in words (number of `u32`) this value will occupy when
+    /// written to the socket. Importantly, a file descriptor has zero size
+    /// since its value is transmitted through control message.
+    #[must_use]
+    fn size(&self) -> usize;
+}
+
+impl Wire for i32
+{
+    #[inline(always)]
+    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        buf[0] = self.cast_unsigned();
+        &mut buf[1..]
+    }
+
+    #[inline(always)]
+    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    {
+        buf.get(0)
+            .map(|v| (&buf[1..], v.cast_signed()))
+            .ok_or(WireError::UnexpectedEof {
+                needed: 1,
+                available: buf.len(),
+            })
+    }
+
+    #[inline(always)]
+    fn size(&self) -> usize
+    {
+        1
+    }
+}
+
+impl Wire for u32
+{
+    #[inline(always)]
+    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        buf[0] = *self;
+        &mut buf[1..]
+    }
+
+    #[inline(always)]
+    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    {
+        buf.get(0)
+            .map(|v| (&buf[1..], *v))
+            .ok_or(WireError::UnexpectedEof {
+                needed: 1,
+                available: buf.len(),
+            })
+    }
+
+    #[inline(always)]
+    fn size(&self) -> usize
+    {
+        1
+    }
+}
+
+impl Wire for &CStr
+{
+    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        write_sized_data(self, buf)
+    }
+
+    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    {
+        let (buf, bytes) = <&[u8] as Wire>::read(buf)?;
+
+        // NOTE: This only returns an error if the string is not properly
+        // null-terminated. Otherwise, it does not check for UTF-8 errors. The
+        // wayland docs specify that the strings are UTF-8 encoded. Should we
+        // throw an error here if the &CStr is not encoded properly? Maybe that
+        // should be enforced by &str, which it is currently.
+        //
+        // TODO: Make sure to document handling of UTF-8 when using &CStr.
+        let value = CStr::from_bytes_with_nul(bytes)?;
+        Ok((buf, value))
+    }
+
+    fn size(&self) -> usize
+    {
+        1 + pad(self.to_bytes_with_nul().len())
+    }
+}
+
+impl Wire for &str
+{
+    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        write_sized_data(self, buf)
+    }
+
+    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    {
+        let (buf, value) = <&CStr as Wire>::read(buf)?;
+        // NOTE: `to_str` throws an error if the &CStr is not proper UTF-8.
+        Ok((buf, value.to_str()?))
+    }
+
+    fn size(&self) -> usize
+    {
+        1 + pad(self.len() + 1)
+    }
+}
+
+// FIX: Do we need this impl? I think it is good to have.
+impl Wire for String
+{
+    #[inline(always)]
+    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        self.as_str().write(buf)
+    }
+
+    #[inline(always)]
+    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    {
+        let (buf, value) = <&CStr as Wire>::read(buf)?;
+        Ok((buf, value.to_str()?.to_string()))
+    }
+
+    #[inline(always)]
+    fn size(&self) -> usize
+    {
+        self.as_str().size()
+    }
+}
+
+impl Wire for Fixed
+{
+    #[inline(always)]
+    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        i32::write(&self.to_bits(), buf)
+    }
+
+    #[inline(always)]
+    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    {
+        i32::read(buf).map(|(buf, value)| (buf, Fixed::from_bits(value)))
+    }
+
+    #[inline(always)]
+    fn size(&self) -> usize
+    {
+        1
+    }
+}
+
+impl Wire for Object
+{
+    #[inline(always)]
+    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        self.get().write(buf)
+    }
+
+    #[inline(always)]
+    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    {
+        let (buf, id) = u32::read(buf)?;
+        Self::new(id)
+            .map(|value| (buf, value))
+            .ok_or(WireError::Malformed)
+    }
+
+    #[inline(always)]
+    fn size(&self) -> usize
+    {
+        1
+    }
+}
+
+impl Wire for Vec<u8>
+{
+    #[inline(always)]
+    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        self.as_slice().write(buf)
+    }
+
+    #[inline(always)]
+    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    {
+        let (buf, value) = <&[u8] as Wire>::read(buf)?;
+        Ok((buf, value.to_vec()))
+    }
+
+    #[inline(always)]
+    fn size(&self) -> usize
+    {
+        self.as_slice().size()
+    }
+}
+
+impl Wire for &[u8]
+{
+    #[inline(always)]
+    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        write_sized_data(self, buf)
+    }
+
+    #[inline(always)]
+    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    {
+        let (buf, size) = u32::read(buf)?;
+        let words = pad(size as usize);
+        if buf.len() < words {
+            return Err(WireError::UnexpectedEof {
+                needed: words,
+                available: buf.len(),
+            });
+        }
+        let value = unsafe { slice::from_raw_parts(buf.as_ptr().cast(), size as usize) };
+        Ok((&buf[words..], value))
+    }
+
+    #[inline(always)]
+    fn size(&self) -> usize
+    {
+        1 + pad(self.len())
+    }
+}
+
+impl Wire for Header
+{
+    #[inline(always)]
+    fn write<'buf>(&self, mut buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        let word = ((self.size as u32) << 16) | (self.opcode as u32);
+        buf = self.object.write(buf);
+        word.write(buf)
+    }
+
+    #[inline(always)]
+    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    {
+        let (buf, object) = Object::read(buf)?;
+        let (buf, word) = u32::read(buf)?;
+        let header = Header {
+            object,
+            size: ((word as u32) >> 16) as u16,
+            opcode: (word & 0xFFFF) as u16,
+        };
+        Ok((buf, header))
+    }
+
+    #[inline(always)]
+    fn size(&self) -> usize
+    {
+        2
+    }
+}
+
+impl<T> Wire for Option<T>
+where
+    T: Wire,
+{
+    #[inline(always)]
+    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        match self {
+            None => Wire::write(&0u32, buf),
+            Some(value) => Wire::write(value, buf),
+        }
+    }
+
+    #[inline(always)]
+    fn read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    {
+        let (_, value) = u32::read(buf)?;
+        match value {
+            0 => Ok((&buf[1..], None)),
+            _ => T::read(buf).map(|(buf, value)| (buf, Some(value))),
+        }
+    }
+
+    #[inline(always)]
+    fn size(&self) -> usize
+    {
+        match self {
+            None => 1,
+            Some(value) => Wire::size(value),
+        }
+    }
+}
+
+/// Helper trait to help with sized types such as strings and arrays.
+trait SizedData
+{
+    /// Length required by the object in bytes, without the size field.
+    fn data_len(&self) -> usize;
+
+    /// Write the contents of `self` into `dest`.
+    ///
+    /// The length of `dest` must be the same as the length requrned by
+    /// `data_len`.
+    fn write_data(&self, dest: &mut [u8]);
+}
+
+impl SizedData for &[u8]
+{
+    #[inline(always)]
+    fn data_len(&self) -> usize
+    {
+        self.len()
+    }
+
+    #[inline(always)]
+    fn write_data(&self, dest: &mut [u8])
+    {
+        dest.copy_from_slice(self);
+    }
+}
+
+impl SizedData for &CStr
+{
+    #[inline(always)]
+    fn data_len(&self) -> usize
+    {
+        self.to_bytes_with_nul().len()
+    }
+
+    #[inline(always)]
+    fn write_data(&self, dest: &mut [u8])
+    {
+        dest.copy_from_slice(self.to_bytes_with_nul());
+    }
+}
+
+impl SizedData for &str
+{
+    #[inline(always)]
+    fn data_len(&self) -> usize
+    {
+        self.len() + 1
+    }
+
+    #[inline(always)]
+    fn write_data(&self, dest: &mut [u8])
+    {
+        dest[..self.len()].copy_from_slice(self.as_bytes());
+        // NOTE: Setting the last byte to zero explicitly is not necessary.
+        // `write_sized_data` function already sets the last word to
+        // zero. dest[self.len()] = 0;
+    }
 }
 
 #[inline(always)]
-#[must_use]
-pub fn read_object_nullable<'buf>(buf: &'buf [u32]) -> (&'buf [u32], Option<Object>)
+fn write_sized_data<'buf>(data: &impl SizedData, mut buf: &'buf mut [u32]) -> &'buf mut [u32]
 {
-    (&buf[1..], Object::new(buf[0]))
-}
-
-#[inline(always)]
-#[must_use]
-pub fn read_new_id<'buf>(buf: &'buf [u32]) -> (&'buf [u32], Object)
-{
-    (&buf[1..], Object::new(buf[0]).unwrap())
-}
-
-#[allow(unused_variables)]
-#[inline(always)]
-#[must_use]
-pub fn read_array<'buf>(buf: &'buf [u32]) -> (&'buf [u32], Object)
-{
-    unimplemented!()
-}
-
-#[inline(always)]
-#[must_use]
-pub fn read_header<'buf>(buf: &'buf [u32]) -> (&'buf [u32], Header)
-{
-    let (buf, object) = read_object(buf);
-    let (buf, word) = read_uint(buf);
-    let header = Header {
-        object,
-        size: ((word as u32) >> 16) as u16,
-        opcode: (word & 0xFFFF) as u16,
-    };
-    (buf, header)
+    buf = (data.data_len() as u32).write(buf);
+    let words = pad(data.data_len());
+    let dest = unsafe { slice::from_raw_parts_mut(buf.as_mut_ptr().cast(), data.data_len()) };
+    // When we write the bytes provided by `data` into `buf`, there may be untouched
+    // bytes at the end of `buf` since the contents of `buf` are padded to 4
+    // bytes. We set the last word to zero before writing bytes so that we do
+    // not leak any data from the memory. Also, string type has
+    // to be null-terminated.
+    buf[words] = 0;
+    data.write_data(dest);
+    &mut buf[words..]
 }

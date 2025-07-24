@@ -1,15 +1,8 @@
-use crate::Array;
 use crate::Fd;
 use crate::Fixed;
+use crate::NewId;
 use crate::Object;
-use crate::write_fixed;
-use crate::write_int;
-use crate::write_new_id;
-use crate::write_object;
-use crate::write_object_nullable;
-use crate::write_string;
-use crate::write_string_nullable;
-use crate::write_uint;
+use crate::Wire;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Argument<'msg>
@@ -21,8 +14,8 @@ pub enum Argument<'msg>
     StringNullable(Option<&'msg str>),
     Object(Object),
     ObjectNullable(Option<Object>),
-    NewId(Object),
-    Array(Array),
+    NewId(NewId),
+    Array(&'msg [u8]),
     Fd(Fd),
 }
 
@@ -52,16 +45,18 @@ impl Argument<'_>
     pub fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         match self {
-            Argument::Int(v) => write_int(buf, *v),
-            Argument::Uint(v) => write_uint(buf, *v),
-            Argument::Fixed(v) => write_fixed(buf, *v),
-            Argument::String(v) => write_string(buf, *v),
-            Argument::StringNullable(v) => write_string_nullable(buf, *v),
-            Argument::Object(v) => write_object(buf, *v),
-            Argument::ObjectNullable(v) => write_object_nullable(buf, *v),
-            Argument::NewId(v) => write_new_id(buf, *v),
-            Argument::Array(_) => unimplemented!(),
-            Argument::Fd(_) => unimplemented!(),
+            Argument::Int(v) => v.write(buf),
+            Argument::Uint(v) => v.write(buf),
+            Argument::Fixed(v) => v.write(buf),
+            Argument::String(v) => v.write(buf),
+            Argument::StringNullable(v) => v.write(buf),
+            Argument::Object(v) => v.write(buf),
+            Argument::ObjectNullable(v) => v.write(buf),
+            Argument::NewId(v) => v.write(buf),
+            Argument::Array(v) => v.write(buf),
+            // The Wire trait is not implemented by Fd, since it is not sent through the main
+            // transport.
+            Argument::Fd(_) => buf,
         }
     }
 }
