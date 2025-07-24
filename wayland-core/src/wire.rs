@@ -19,9 +19,13 @@ use std::fmt;
 use std::slice;
 use std::str::Utf8Error;
 
+use crate::Enum;
+use crate::EnumParseError;
 use crate::Fixed;
 use crate::Header;
+use crate::Int;
 use crate::Object;
+use crate::Uint;
 use crate::pad;
 
 /// Errors that can happen during deserialization from the wire format.
@@ -63,6 +67,14 @@ impl fmt::Display for WireError
             ),
             WireError::Malformed => write!(f, "malformed value read from the buffer"),
         }
+    }
+}
+
+impl From<EnumParseError> for WireError
+{
+    fn from(_value: EnumParseError) -> Self
+    {
+        WireError::Malformed
     }
 }
 
@@ -151,6 +163,50 @@ impl Wire for i32
     fn wire_size(&self) -> usize
     {
         1
+    }
+}
+
+impl<T> Wire for Int<T>
+where
+    T: Enum + TryFrom<u32, Error = EnumParseError>,
+{
+    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        self.0.int().wire_write(buf)
+    }
+
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    {
+        let (buf, value) = i32::wire_read(buf)?;
+        let enu = T::try_from(value.cast_unsigned())?;
+        Ok((buf, Int(enu)))
+    }
+
+    fn wire_size(&self) -> usize
+    {
+        self.0.int().wire_size()
+    }
+}
+
+impl<T> Wire for Uint<T>
+where
+    T: Enum + TryFrom<u32, Error = EnumParseError>,
+{
+    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        self.0.uint().wire_write(buf)
+    }
+
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    {
+        let (buf, value) = u32::wire_read(buf)?;
+        let enu = T::try_from(value)?;
+        Ok((buf, Uint(enu)))
+    }
+
+    fn wire_size(&self) -> usize
+    {
+        self.0.uint().wire_size()
     }
 }
 

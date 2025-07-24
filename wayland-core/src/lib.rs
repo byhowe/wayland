@@ -10,6 +10,12 @@ pub use message::*;
 pub use primitive::*;
 pub use wire::*;
 
+pub trait Enum: Copy
+{
+    fn int(self) -> i32;
+    fn uint(self) -> u32;
+}
+
 #[inline(always)]
 pub fn prepare_buf(buf: &mut Vec<u32>, count: usize)
 {

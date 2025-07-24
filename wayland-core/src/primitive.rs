@@ -1,4 +1,63 @@
+use std::fmt;
 use std::num::NonZero;
+
+use crate::Enum;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EnumParseError
+{
+    pub received: u32,
+    pub interface: &'static str,
+    pub enu: &'static str,
+}
+
+impl fmt::Display for EnumParseError
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+    {
+        write!(
+            f,
+            "unable to parse wayland enum ({}::{}): received 0x{:08x} ({})",
+            self.interface, self.enu, self.received, self.received
+        )
+    }
+}
+
+impl std::error::Error for EnumParseError {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct Int<T>(pub T)
+where
+    T: Enum;
+
+impl<T> Int<T>
+where
+    T: Enum,
+{
+    #[inline]
+    pub const fn new(value: T) -> Self
+    {
+        Self(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct Uint<T>(pub T)
+where
+    T: Enum;
+
+impl<T> Uint<T>
+where
+    T: Enum,
+{
+    #[inline]
+    pub const fn new(value: T) -> Self
+    {
+        Self(value)
+    }
+}
 
 /// Wayland fixed-point number (24.8 format)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
