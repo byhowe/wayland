@@ -141,22 +141,33 @@ pub trait Wire: Sized
     fn wire_size(&self) -> usize;
 }
 
-impl Wire for i32
+/// Trait for Wayland types that only occupy a single word in the wire format.
+trait WirePrimitive: Copy
 {
+    fn value(self) -> u32;
+    fn parse(value: u32) -> Option<Self>;
+}
+
+impl<T> Wire for T
+where
+    T: WirePrimitive,
+{
+    #[inline]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
-        buf[0] = self.cast_unsigned();
+        buf[0] = self.value();
         &mut buf[1..]
     }
 
+    #[inline]
     fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
     {
-        buf.get(0)
-            .map(|v| (&buf[1..], v.cast_signed()))
-            .ok_or(WireError::UnexpectedEof {
-                needed: 1,
-                available: buf.len(),
-            })
+        let bits = buf.get(0).ok_or(WireError::UnexpectedEof {
+            needed: 1,
+            available: buf.len(),
+        })?;
+        let value = Self::parse(*bits).ok_or(WireError::Malformed)?;
+        Ok((&buf[1..], value))
     }
 
     #[inline]
@@ -166,73 +177,181 @@ impl Wire for i32
     }
 }
 
-impl<T> Wire for Int<T>
-where
-    T: Enum + TryFrom<u32, Error = EnumParseError>,
+impl WirePrimitive for i32
 {
-    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    #[inline]
+    fn value(self) -> u32
     {
-        self.0.int().wire_write(buf)
-    }
-
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
-    {
-        let (buf, value) = i32::wire_read(buf)?;
-        let enu = T::try_from(value.cast_unsigned())?;
-        Ok((buf, Int(enu)))
-    }
-
-    fn wire_size(&self) -> usize
-    {
-        self.0.int().wire_size()
-    }
-}
-
-impl<T> Wire for Uint<T>
-where
-    T: Enum + TryFrom<u32, Error = EnumParseError>,
-{
-    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
-    {
-        self.0.uint().wire_write(buf)
-    }
-
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
-    {
-        let (buf, value) = u32::wire_read(buf)?;
-        let enu = T::try_from(value)?;
-        Ok((buf, Uint(enu)))
-    }
-
-    fn wire_size(&self) -> usize
-    {
-        self.0.uint().wire_size()
-    }
-}
-
-impl Wire for u32
-{
-    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
-    {
-        buf[0] = *self;
-        &mut buf[1..]
-    }
-
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
-    {
-        buf.get(0)
-            .map(|v| (&buf[1..], *v))
-            .ok_or(WireError::UnexpectedEof {
-                needed: 1,
-                available: buf.len(),
-            })
+        self.cast_unsigned()
     }
 
     #[inline]
-    fn wire_size(&self) -> usize
+    fn parse(value: u32) -> Option<Self>
     {
-        1
+        Some(value.cast_signed())
     }
+}
+
+impl<T> WirePrimitive for Int<T>
+where
+    T: Enum + TryFrom<u32, Error = EnumParseError>,
+{
+    #[inline]
+    fn value(self) -> u32
+    {
+        self.0.int().cast_unsigned()
+    }
+
+    #[inline]
+    fn parse(value: u32) -> Option<Self>
+    {
+        let enu = T::try_from(value).ok()?;
+        Some(Int(enu))
+    }
+}
+
+impl WirePrimitive for u32
+{
+    #[inline]
+    fn value(self) -> u32
+    {
+        self
+    }
+
+    #[inline]
+    fn parse(value: u32) -> Option<Self>
+    {
+        Some(value)
+    }
+}
+
+impl<T> WirePrimitive for Uint<T>
+where
+    T: Enum + TryFrom<u32, Error = EnumParseError>,
+{
+    #[inline]
+    fn value(self) -> u32
+    {
+        self.0.uint()
+    }
+
+    #[inline]
+    fn parse(value: u32) -> Option<Self>
+    {
+        let enu = T::try_from(value).ok()?;
+        Some(Uint(enu))
+    }
+}
+
+impl WirePrimitive for Fixed
+{
+    #[inline]
+    fn value(self) -> u32
+    {
+        self.to_bits().cast_unsigned()
+    }
+
+    #[inline]
+    fn parse(value: u32) -> Option<Self>
+    {
+        Some(Fixed::from_bits(value.cast_signed()))
+    }
+}
+
+impl WirePrimitive for Object
+{
+    #[inline]
+    fn value(self) -> u32
+    {
+        self.get()
+    }
+
+    #[inline]
+    fn parse(value: u32) -> Option<Self>
+    {
+        Self::new(value)
+    }
+}
+
+/// Helper trait for types that can be written as sized data (length + content).
+trait SizedData
+{
+    /// Length required by the object in bytes, without the size field.
+    ///
+    /// For strings, this includes the null terminator.
+    /// For byte arrays, this is just the array length.
+    fn data_len(&self) -> usize;
+
+    /// Write the contents of `self` into `dest`.
+    ///
+    /// The length of `dest` must be the same as the length requrned by
+    /// `data_len`.
+    fn write_data(&self, dest: &mut [u8]);
+}
+
+impl SizedData for &[u8]
+{
+    #[inline]
+    fn data_len(&self) -> usize
+    {
+        self.len()
+    }
+
+    #[inline]
+    fn write_data(&self, dest: &mut [u8])
+    {
+        dest.copy_from_slice(self);
+    }
+}
+
+impl SizedData for &CStr
+{
+    #[inline]
+    fn data_len(&self) -> usize
+    {
+        self.to_bytes_with_nul().len()
+    }
+
+    #[inline]
+    fn write_data(&self, dest: &mut [u8])
+    {
+        dest.copy_from_slice(self.to_bytes_with_nul());
+    }
+}
+
+impl SizedData for &str
+{
+    #[inline]
+    fn data_len(&self) -> usize
+    {
+        self.len() + 1
+    }
+
+    #[inline]
+    fn write_data(&self, dest: &mut [u8])
+    {
+        dest[..self.len()].copy_from_slice(self.as_bytes());
+        // NOTE: Setting the last byte to zero explicitly is not necessary.
+        // `write_sized_data` function already sets the last word to
+        // zero. dest[self.len()] = 0;
+    }
+}
+
+fn write_sized_data<'buf>(data: &impl SizedData, mut buf: &'buf mut [u32]) -> &'buf mut [u32]
+{
+    buf = (data.data_len() as u32).wire_write(buf);
+    let words = pad(data.data_len());
+    // Let Rust handle the bound checks.
+    let dest = &mut buf[..words];
+    let dest = unsafe { slice::from_raw_parts_mut(dest.as_mut_ptr().cast(), data.data_len()) };
+    // When we write the bytes provided by `data` into `buf`, there may be untouched
+    // bytes at the end of `buf` since the contents of `buf` are padded to 4
+    // bytes. We set the last word to zero before writing bytes so that we do
+    // not leak any data from the memory. Also, string type has
+    // to be null-terminated.
+    buf[words - 1] = 0;
+    data.write_data(dest);
+    &mut buf[words..]
 }
 
 impl Wire for &CStr
@@ -319,50 +438,10 @@ impl Wire for Cow<'_, str>
         Ok((buf, Cow::Borrowed(value)))
     }
 
+    #[inline]
     fn wire_size(&self) -> usize
     {
         self.as_ref().wire_size()
-    }
-}
-
-impl Wire for Fixed
-{
-    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
-    {
-        i32::wire_write(&self.to_bits(), buf)
-    }
-
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
-    {
-        i32::wire_read(buf).map(|(buf, value)| (buf, Fixed::from_bits(value)))
-    }
-
-    #[inline]
-    fn wire_size(&self) -> usize
-    {
-        1
-    }
-}
-
-impl Wire for Object
-{
-    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
-    {
-        self.get().wire_write(buf)
-    }
-
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
-    {
-        let (buf, id) = u32::wire_read(buf)?;
-        Self::new(id)
-            .map(|value| (buf, value))
-            .ok_or(WireError::Malformed)
-    }
-
-    #[inline]
-    fn wire_size(&self) -> usize
-    {
-        1
     }
 }
 
@@ -492,86 +571,4 @@ where
             Some(value) => Wire::wire_size(value),
         }
     }
-}
-
-/// Helper trait for types that can be written as sized data (length + content).
-trait SizedData
-{
-    /// Length required by the object in bytes, without the size field.
-    ///
-    /// For strings, this includes the null terminator.
-    /// For byte arrays, this is just the array length.
-    fn data_len(&self) -> usize;
-
-    /// Write the contents of `self` into `dest`.
-    ///
-    /// The length of `dest` must be the same as the length requrned by
-    /// `data_len`.
-    fn write_data(&self, dest: &mut [u8]);
-}
-
-impl SizedData for &[u8]
-{
-    #[inline]
-    fn data_len(&self) -> usize
-    {
-        self.len()
-    }
-
-    #[inline]
-    fn write_data(&self, dest: &mut [u8])
-    {
-        dest.copy_from_slice(self);
-    }
-}
-
-impl SizedData for &CStr
-{
-    #[inline]
-    fn data_len(&self) -> usize
-    {
-        self.to_bytes_with_nul().len()
-    }
-
-    #[inline]
-    fn write_data(&self, dest: &mut [u8])
-    {
-        dest.copy_from_slice(self.to_bytes_with_nul());
-    }
-}
-
-impl SizedData for &str
-{
-    #[inline]
-    fn data_len(&self) -> usize
-    {
-        self.len() + 1
-    }
-
-    #[inline]
-    fn write_data(&self, dest: &mut [u8])
-    {
-        dest[..self.len()].copy_from_slice(self.as_bytes());
-        // NOTE: Setting the last byte to zero explicitly is not necessary.
-        // `write_sized_data` function already sets the last word to
-        // zero. dest[self.len()] = 0;
-    }
-}
-
-#[inline]
-fn write_sized_data<'buf>(data: &impl SizedData, mut buf: &'buf mut [u32]) -> &'buf mut [u32]
-{
-    buf = (data.data_len() as u32).wire_write(buf);
-    let words = pad(data.data_len());
-    // Let Rust handle the bound checks.
-    let dest = &mut buf[..words];
-    let dest = unsafe { slice::from_raw_parts_mut(dest.as_mut_ptr().cast(), data.data_len()) };
-    // When we write the bytes provided by `data` into `buf`, there may be untouched
-    // bytes at the end of `buf` since the contents of `buf` are padded to 4
-    // bytes. We set the last word to zero before writing bytes so that we do
-    // not leak any data from the memory. Also, string type has
-    // to be null-terminated.
-    buf[words - 1] = 0;
-    data.write_data(dest);
-    &mut buf[words..]
 }
