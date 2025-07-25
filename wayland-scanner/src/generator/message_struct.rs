@@ -42,13 +42,14 @@ impl ToTokens for MessageStruct<'_>
     fn to_tokens(&self, tokens: &mut TokenStream)
     {
         let message_name = self.name();
-        let message_generics = self.generics();
+        let message_generics_a = self.generics();
+        let message_elided_generic = message_generics_a.clone().map(|_| quote! { <'_> });
         // FIX: temporarily disable fd.
         let message_fields = self.0.args.iter().filter_map(|arg| match arg.typ {
             schema::Type::Fd => None,
             _ => Some(ArgField {
                 arg,
-                ctx: TypeContext::Struct,
+                ctx: TypeContext::Struct { lifetime: "'a" },
             }),
         });
         let message_opcode = self.0.opcode;
@@ -70,7 +71,7 @@ impl ToTokens for MessageStruct<'_>
                 t => {
                     let type_path = Type {
                         typ: t,
-                        ctx: TypeContext::Struct,
+                        ctx: TypeContext::Struct { lifetime: "'_" },
                     };
                     Some(quote! { <#type_path as ::wayland_core::Wire> })
                 }
@@ -78,21 +79,23 @@ impl ToTokens for MessageStruct<'_>
 
         quote! {
             #[derive(Debug, Clone, PartialEq, Eq)]
-            pub struct #message_name #message_generics {
+            pub struct #message_name #message_generics_a {
                 #(pub #message_fields,)*
             }
 
-            impl #message_generics ::wayland_core::Opcode for #message_name #message_generics {
+            impl #message_generics_a ::wayland_core::Opcode for #message_name #message_generics_a {
                 const OPCODE: u16 = #message_opcode;
             }
 
-            impl #message_generics ::wayland_core::Wire for #message_name #message_generics {
+            impl ::wayland_core::Wire for #message_name #message_elided_generic {
+                type Output<'a> = #message_name #message_generics_a;
+
                 fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32] {
                     #(let buf = self.#wire_arguments.wire_write(buf);)*
                     buf
                 }
 
-                fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), ::wayland_core::WireError> {
+                fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), ::wayland_core::WireError> {
                     #(let (buf, #wire_arguments) = #wire_argument_types::wire_read(buf)?;)*
                     Ok((buf, #message_name {
                         #(#wire_arguments,)*

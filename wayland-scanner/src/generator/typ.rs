@@ -1,6 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::ToTokens;
 use quote::quote;
+use syn::Lifetime;
 use wayland_xml::schema;
 
 use crate::generator::*;
@@ -17,7 +18,10 @@ impl Type<'_>
     pub fn string(&self) -> TokenStream
     {
         match self.ctx {
-            TypeContext::Struct => quote! { ::std::borrow::Cow<'a, str> },
+            TypeContext::Struct { lifetime } => {
+                let lt = syn::parse_str::<Lifetime>(lifetime).unwrap();
+                quote! { ::std::borrow::Cow<#lt, str> }
+            }
             TypeContext::Function => quote! { &str },
         }
     }
@@ -25,7 +29,10 @@ impl Type<'_>
     pub fn array(&self) -> TokenStream
     {
         match self.ctx {
-            TypeContext::Struct => quote! { ::std::borrow::Cow<'a, [u8]> },
+            TypeContext::Struct { lifetime } => {
+                let lt = syn::parse_str::<Lifetime>(lifetime).unwrap();
+                quote! { ::std::borrow::Cow<#lt, [u8]> }
+            }
             TypeContext::Function => quote! { &[u8] },
         }
     }
@@ -78,6 +85,9 @@ impl ToTokens for Type<'_>
 #[derive(Debug, Clone, Copy)]
 pub enum TypeContext
 {
-    Struct,
+    Struct
+    {
+        lifetime: &'static str,
+    },
     Function,
 }
