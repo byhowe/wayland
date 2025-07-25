@@ -113,8 +113,10 @@ impl std::error::Error for WireError {}
 ///
 /// Implementations must ensure that `wire_write()` uses exactly `wire_size()`
 /// words, and that `wire_read()` advances the buffer by the same amount.
-pub trait Wire: Sized
+pub trait Wire
 {
+    type Output<'a>: 'a;
+
     /// Write this value to the buffer, returning the remaining buffer slice.
     ///
     /// # Panics
@@ -132,7 +134,7 @@ pub trait Wire: Sized
     /// - The data is malformed (e.g., string is not null-terminated)
     /// - The data is semantically invalid (e.g., zero object ID)
     #[must_use]
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>;
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>;
 
     /// Returns the size in words (number of `u32`) this value will occupy when
     /// written to the socket. Importantly, a file descriptor has zero size
@@ -142,39 +144,10 @@ pub trait Wire: Sized
 }
 
 /// Trait for Wayland types that only occupy a single word in the wire format.
-trait WirePrimitive: Copy
+pub trait WirePrimitive: Copy
 {
     fn value(self) -> u32;
     fn parse(value: u32) -> Option<Self>;
-}
-
-impl<T> Wire for T
-where
-    T: WirePrimitive,
-{
-    #[inline]
-    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
-    {
-        buf[0] = self.value();
-        &mut buf[1..]
-    }
-
-    #[inline]
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
-    {
-        let bits = buf.get(0).ok_or(WireError::UnexpectedEof {
-            needed: 1,
-            available: buf.len(),
-        })?;
-        let value = Self::parse(*bits).ok_or(WireError::Malformed)?;
-        Ok((&buf[1..], value))
-    }
-
-    #[inline]
-    fn wire_size(&self) -> usize
-    {
-        1
-    }
 }
 
 impl WirePrimitive for i32
@@ -273,6 +246,37 @@ impl WirePrimitive for Object
     }
 }
 
+impl<T> Wire for T
+where
+    T: WirePrimitive + 'static,
+{
+    type Output<'a> = T;
+
+    #[inline]
+    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        buf[0] = self.value();
+        &mut buf[1..]
+    }
+
+    #[inline]
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    {
+        let bits = buf.get(0).ok_or(WireError::UnexpectedEof {
+            needed: 1,
+            available: buf.len(),
+        })?;
+        let value = Self::parse(*bits).ok_or(WireError::Malformed)?;
+        Ok((&buf[1..], value))
+    }
+
+    #[inline]
+    fn wire_size(&self) -> usize
+    {
+        1
+    }
+}
+
 /// Helper trait for types that can be written as sized data (length + content).
 trait SizedData
 {
@@ -354,16 +358,18 @@ fn write_sized_data<'buf>(data: &impl SizedData, mut buf: &'buf mut [u32]) -> &'
     &mut buf[words..]
 }
 
-impl Wire for &CStr
+impl Wire for CStr
 {
+    type Output<'a> = &'a CStr;
+
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
-        write_sized_data(self, buf)
+        write_sized_data(&self, buf)
     }
 
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>
     {
-        let (buf, bytes) = <&[u8] as Wire>::wire_read(buf)?;
+        let (buf, bytes) = <[u8] as Wire>::wire_read(buf)?;
 
         // NOTE: This only returns an error if the string is not properly
         // null-terminated. Otherwise, it does not check for UTF-8 errors. The
@@ -383,16 +389,18 @@ impl Wire for &CStr
     }
 }
 
-impl Wire for &str
+impl Wire for str
 {
+    type Output<'a> = &'a str;
+
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
-        write_sized_data(self, buf)
+        write_sized_data(&self, buf)
     }
 
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>
     {
-        let (buf, value) = <&CStr as Wire>::wire_read(buf)?;
+        let (buf, value) = <CStr as Wire>::wire_read(buf)?;
         // NOTE: `to_str` throws an error if the &CStr is not proper UTF-8.
         Ok((buf, value.to_str()?))
     }
@@ -407,15 +415,16 @@ impl Wire for &str
 // FIX: Do we need this impl? I think it is good to have.
 impl Wire for String
 {
+    type Output<'a> = String;
+
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         self.as_str().wire_write(buf)
     }
 
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>
     {
-        let (buf, value) = <&CStr as Wire>::wire_read(buf)?;
-        Ok((buf, value.to_str()?.to_string()))
+        <str as Wire>::wire_read(buf).map(|(buf, value)| (buf, value.to_string()))
     }
 
     #[inline]
@@ -427,15 +436,16 @@ impl Wire for String
 
 impl Wire for Cow<'_, str>
 {
+    type Output<'a> = Cow<'a, str>;
+
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         self.as_ref().wire_write(buf)
     }
 
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>
     {
-        let (buf, value) = <&str as Wire>::wire_read(buf)?;
-        Ok((buf, Cow::Borrowed(value)))
+        <str as Wire>::wire_read(buf).map(|(buf, value)| (buf, Cow::Borrowed(value)))
     }
 
     #[inline]
@@ -447,14 +457,16 @@ impl Wire for Cow<'_, str>
 
 impl Wire for Vec<u8>
 {
+    type Output<'a> = Vec<u8>;
+
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         self.as_slice().wire_write(buf)
     }
 
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>
     {
-        let (buf, value) = <&[u8] as Wire>::wire_read(buf)?;
+        let (buf, value) = <[u8] as Wire>::wire_read(buf)?;
         Ok((buf, value.to_vec()))
     }
 
@@ -465,14 +477,16 @@ impl Wire for Vec<u8>
     }
 }
 
-impl Wire for &[u8]
+impl Wire for [u8]
 {
+    type Output<'a> = &'a [u8];
+
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
-        write_sized_data(self, buf)
+        write_sized_data(&self, buf)
     }
 
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>
     {
         let (buf, size) = u32::wire_read(buf)?;
         let words = pad(size as usize);
@@ -495,14 +509,16 @@ impl Wire for &[u8]
 
 impl Wire for Cow<'_, [u8]>
 {
+    type Output<'a> = Cow<'a, [u8]>;
+
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         self.as_ref().wire_write(buf)
     }
 
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>
     {
-        let (buf, value) = <&[u8] as Wire>::wire_read(buf)?;
+        let (buf, value) = <[u8] as Wire>::wire_read(buf)?;
         Ok((buf, Cow::Borrowed(value)))
     }
 
@@ -514,6 +530,8 @@ impl Wire for Cow<'_, [u8]>
 
 impl Wire for Header
 {
+    type Output<'a> = Header;
+
     fn wire_write<'buf>(&self, mut buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         // Pack size and opcode into a single 32-bit word: [size:16][opcode:16]
@@ -522,7 +540,7 @@ impl Wire for Header
         word.wire_write(buf)
     }
 
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>
     {
         let (buf, object) = Object::wire_read(buf)?;
         let (buf, word) = u32::wire_read(buf)?;
@@ -546,6 +564,8 @@ impl<T> Wire for Option<T>
 where
     T: Wire,
 {
+    type Output<'a> = Option<T::Output<'a>>;
+
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         match self {
@@ -554,7 +574,7 @@ where
         }
     }
 
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self), WireError>
+    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>
     {
         let (_, value) = u32::wire_read(buf)?;
         match value {
