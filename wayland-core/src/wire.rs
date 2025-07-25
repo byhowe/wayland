@@ -11,6 +11,14 @@
 //! - Data is padded to 4-byte boundaries
 //! - File descriptors are transmitted via control messages (not in the data
 //!   buffer)
+//!
+//! # Type Categories
+//!
+//! Wire types are divided into two categories:
+//! - **Primitive types**: Fixed-size types that occupy exactly one 32-bit word
+//!   (integers, fixed-point numbers, object IDs)
+//! - **Dynamic types**: Variable-size types with length prefixes (strings, byte
+//!   arrays)
 
 use std::borrow::Cow;
 use std::ffi::CStr;
@@ -115,6 +123,11 @@ impl std::error::Error for WireError {}
 /// words, and that `wire_read()` advances the buffer by the same amount.
 pub trait Wire
 {
+    /// The type returned when reading from the wire format.
+    ///
+    /// For primitive types, this is typically `Self`.
+    /// For dynamic types, this is usually a borrowed reference like `&[u8]` or
+    /// `&str`.
     type Output<'a>: 'a;
 
     /// Write this value to the buffer, returning the remaining buffer slice.
@@ -143,11 +156,67 @@ pub trait Wire
     fn wire_size(&self) -> usize;
 }
 
-/// Trait for Wayland types that only occupy a single word in the wire format.
+/// Trait for Wayland types that occupy exactly one word in the wire format.
+///
+/// Primitive types include integers, fixed-point numbers, and object IDs.
+/// They are stored directly as 32-bit values without any length prefix.
 pub trait WirePrimitive: Copy
 {
+    /// Convert this value to its wire format representation.
     fn value(self) -> u32;
+
+    /// Parse a value from its wire format representation.
+    ///
+    /// Returns `None` if the wire value is invalid for this type
+    /// (e.g., zero object ID, invalid enum variant).
     fn parse(value: u32) -> Option<Self>;
+}
+
+/// Trait for dynamically sized Wayland types such as arrays and strings.
+///
+/// Dynamic types are stored with a length prefix followed by the data,
+/// padded to 4-byte boundaries.
+///
+/// # Wire Format
+///
+/// ```text
+/// [length: u32][data: bytes...][padding to 4-byte boundary]
+/// ```
+pub trait WireDynamic
+{
+    /// The type returned when reading from the wire format.
+    type Output<'a>: 'a;
+
+    /// Get the raw byte data for this value.
+    fn data(&self) -> &[u8];
+
+    /// Get the size of the data in bytes.
+    ///
+    /// For most types this is just `self.data().len()`, but strings
+    /// need to account for null termination.
+    #[inline]
+    fn dynamic_size(&self) -> usize
+    {
+        self.data().len()
+    }
+
+    /// Write the data to the provided byte buffer.
+    ///
+    /// The buffer is guaranteed to be exactly `dynamic_size()` bytes long.
+    /// For strings, the null termination must also be handled here. But, it is
+    /// not necessary since the caller sets the last word of the allocated
+    /// buffer to zero.
+    #[inline]
+    fn dynamic_write<'buf>(&self, buf: &'buf mut [u8])
+    {
+        buf.copy_from_slice(self.data());
+    }
+
+    /// Parse data from the provided byte buffer.
+    ///
+    /// The buffer contains exactly the number of bytes specified in the
+    /// length prefix, without padding.
+    fn dynamic_read<'buf>(buf: &'buf [u8]) -> Result<Self::Output<'buf>, WireError>;
 }
 
 impl WirePrimitive for i32
@@ -246,7 +315,7 @@ impl WirePrimitive for Object
     }
 }
 
-impl<T> Wire for T
+impl<T> helper::WireHelper<helper::WirePrimitiveMarker> for T
 where
     T: WirePrimitive + 'static,
 {
@@ -277,138 +346,153 @@ where
     }
 }
 
-/// Helper trait for types that can be written as sized data (length + content).
-trait SizedData
+impl WireDynamic for [u8]
 {
-    /// Length required by the object in bytes, without the size field.
-    ///
-    /// For strings, this includes the null terminator.
-    /// For byte arrays, this is just the array length.
-    fn data_len(&self) -> usize;
+    type Output<'a> = &'a [u8];
 
-    /// Write the contents of `self` into `dest`.
-    ///
-    /// The length of `dest` must be the same as the length requrned by
-    /// `data_len`.
-    fn write_data(&self, dest: &mut [u8]);
-}
-
-impl SizedData for &[u8]
-{
     #[inline]
-    fn data_len(&self) -> usize
+    fn data(&self) -> &[u8]
     {
-        self.len()
+        self
     }
 
     #[inline]
-    fn write_data(&self, dest: &mut [u8])
+    fn dynamic_read<'buf>(buf: &'buf [u8]) -> Result<Self::Output<'buf>, WireError>
     {
-        dest.copy_from_slice(self);
+        Ok(buf)
     }
 }
 
-impl SizedData for &CStr
-{
-    #[inline]
-    fn data_len(&self) -> usize
-    {
-        self.to_bytes_with_nul().len()
-    }
-
-    #[inline]
-    fn write_data(&self, dest: &mut [u8])
-    {
-        dest.copy_from_slice(self.to_bytes_with_nul());
-    }
-}
-
-impl SizedData for &str
-{
-    #[inline]
-    fn data_len(&self) -> usize
-    {
-        self.len() + 1
-    }
-
-    #[inline]
-    fn write_data(&self, dest: &mut [u8])
-    {
-        dest[..self.len()].copy_from_slice(self.as_bytes());
-        // NOTE: Setting the last byte to zero explicitly is not necessary.
-        // `write_sized_data` function already sets the last word to
-        // zero. dest[self.len()] = 0;
-    }
-}
-
-fn write_sized_data<'buf>(data: &impl SizedData, mut buf: &'buf mut [u32]) -> &'buf mut [u32]
-{
-    buf = (data.data_len() as u32).wire_write(buf);
-    let words = pad(data.data_len());
-    // Let Rust handle the bound checks.
-    let dest = &mut buf[..words];
-    let dest = unsafe { slice::from_raw_parts_mut(dest.as_mut_ptr().cast(), data.data_len()) };
-    // When we write the bytes provided by `data` into `buf`, there may be untouched
-    // bytes at the end of `buf` since the contents of `buf` are padded to 4
-    // bytes. We set the last word to zero before writing bytes so that we do
-    // not leak any data from the memory. Also, string type has
-    // to be null-terminated.
-    buf[words - 1] = 0;
-    data.write_data(dest);
-    &mut buf[words..]
-}
-
-impl Wire for CStr
+impl WireDynamic for CStr
 {
     type Output<'a> = &'a CStr;
 
-    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    #[inline]
+    fn data(&self) -> &[u8]
     {
-        write_sized_data(&self, buf)
-    }
-
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>
-    {
-        let (buf, bytes) = <[u8] as Wire>::wire_read(buf)?;
-
-        // NOTE: This only returns an error if the string is not properly
-        // null-terminated. Otherwise, it does not check for UTF-8 errors. The
-        // wayland docs specify that the strings are UTF-8 encoded. Should we
-        // throw an error here if the &CStr is not encoded properly? Maybe that
-        // should be enforced by &str, which it is currently.
-        //
-        // TODO: Make sure to document handling of UTF-8 when using &CStr.
-        let value = CStr::from_bytes_with_nul(bytes)?;
-        Ok((buf, value))
+        self.to_bytes_with_nul()
     }
 
     #[inline]
-    fn wire_size(&self) -> usize
+    fn dynamic_read<'buf>(buf: &'buf [u8]) -> Result<Self::Output<'buf>, WireError>
     {
-        1 + pad(self.to_bytes_with_nul().len())
+        Ok(CStr::from_bytes_with_nul(buf)?)
     }
 }
 
-impl Wire for str
+impl WireDynamic for str
 {
     type Output<'a> = &'a str;
 
-    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+    #[inline]
+    fn data(&self) -> &[u8]
     {
-        write_sized_data(&self, buf)
+        // NOTE: The bytes returned by string is not null terminated. Hence, we must
+        // handle writing this type manually. See `<str as
+        // WireDynamic>::dynamic_write` for details.
+        self.as_bytes()
+    }
+
+    #[inline]
+    fn dynamic_size(&self) -> usize
+    {
+        // +1 for the null byte
+        self.data().len() + 1
+    }
+
+    #[inline]
+    fn dynamic_write<'buf>(&self, buf: &'buf mut [u8])
+    {
+        // NOTE: The caller must guarantee that the length of `buf` is exactly the size
+        // provided by `<str as WireDynamic>::dynamic_size`. It includes the null byte
+        // in this case. We must put the null byte at the end of `buf`. However, we do
+        // not have to. In this crate, the last word of the buffer allocated for an
+        // array-like type is automatically set to zero.
+        buf[..self.len()].copy_from_slice(self.data());
+        // buf[self.len()] should be set to 0, but it's set by the caller
+    }
+
+    #[inline]
+    fn dynamic_read<'buf>(buf: &'buf [u8]) -> Result<Self::Output<'buf>, WireError>
+    {
+        let value = <CStr as WireDynamic>::dynamic_read(buf)?;
+        Ok(value.to_str()?)
+    }
+}
+
+impl<T> WireDynamic for &T
+where
+    T: WireDynamic,
+{
+    type Output<'a> = T::Output<'a>;
+
+    #[inline]
+    fn data(&self) -> &[u8]
+    {
+        <T as WireDynamic>::data(self)
+    }
+
+    #[inline]
+    fn dynamic_size(&self) -> usize
+    {
+        <T as WireDynamic>::dynamic_size(self)
+    }
+
+    #[inline]
+    fn dynamic_write<'buf>(&self, buf: &'buf mut [u8])
+    {
+        <T as WireDynamic>::dynamic_write(self, buf)
+    }
+
+    #[inline]
+    fn dynamic_read<'buf>(buf: &'buf [u8]) -> Result<Self::Output<'buf>, WireError>
+    {
+        <T as WireDynamic>::dynamic_read(buf)
+    }
+}
+
+impl<T> helper::WireHelper<helper::WireDynamicMarker> for T
+where
+    T: WireDynamic + ?Sized,
+{
+    type Output<'a> = T::Output<'a>;
+
+    fn wire_write<'buf>(&self, mut buf: &'buf mut [u32]) -> &'buf mut [u32]
+    {
+        buf = Wire::wire_write(&(self.dynamic_size() as u32), buf);
+        let words = pad(self.dynamic_size());
+        // Let Rust handle the bound checks.
+        let dest = &mut buf[..words];
+        let dest =
+            unsafe { slice::from_raw_parts_mut(dest.as_mut_ptr().cast(), self.dynamic_size()) };
+        // NOTE: When we write the bytes provided by `self` into `buf`, there may be
+        // untouched bytes at the end of `buf` since the contents of `buf` are padded to
+        // 4 bytes. We set the last word to zero before writing bytes so that we do not
+        // leak any data from the memory. Also, string type has to be null-terminated.
+        buf[words - 1] = 0;
+        self.dynamic_write(dest);
+        &mut buf[words..]
     }
 
     fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>
     {
-        let (buf, value) = <CStr as Wire>::wire_read(buf)?;
-        // NOTE: `to_str` throws an error if the &CStr is not proper UTF-8.
-        Ok((buf, value.to_str()?))
+        let (buf, size) = <u32 as Wire>::wire_read(buf)?;
+        let words = pad(size as usize);
+        if buf.len() < words {
+            return Err(WireError::UnexpectedEof {
+                needed: words,
+                available: buf.len(),
+            });
+        }
+        let data = unsafe { slice::from_raw_parts(buf.as_ptr().cast(), size as usize) };
+        let value = T::dynamic_read(data)?;
+        Ok((&buf[words..], value))
     }
 
     #[inline]
     fn wire_size(&self) -> usize
     {
-        1 + pad(self.len() + 1)
+        1 + pad(self.dynamic_size())
     }
 }
 
@@ -474,36 +558,6 @@ impl Wire for Vec<u8>
     fn wire_size(&self) -> usize
     {
         self.as_slice().wire_size()
-    }
-}
-
-impl Wire for [u8]
-{
-    type Output<'a> = &'a [u8];
-
-    fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
-    {
-        write_sized_data(&self, buf)
-    }
-
-    fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>
-    {
-        let (buf, size) = u32::wire_read(buf)?;
-        let words = pad(size as usize);
-        if buf.len() < words {
-            return Err(WireError::UnexpectedEof {
-                needed: words,
-                available: buf.len(),
-            });
-        }
-        let value = unsafe { slice::from_raw_parts(buf.as_ptr().cast(), size as usize) };
-        Ok((&buf[words..], value))
-    }
-
-    #[inline]
-    fn wire_size(&self) -> usize
-    {
-        1 + pad(self.len())
     }
 }
 
@@ -591,4 +645,70 @@ where
             Some(value) => Wire::wire_size(value),
         }
     }
+}
+
+pub trait WireAncillary: Sized {}
+
+mod helper
+{
+    pub trait WireHelper<M>
+    {
+        type Output<'a>: 'a;
+
+        #[must_use]
+        fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32];
+
+        #[must_use]
+        fn wire_read<'buf>(
+            buf: &'buf [u32],
+        ) -> Result<(&'buf [u32], Self::Output<'buf>), super::WireError>;
+
+        #[must_use]
+        fn wire_size(&self) -> usize;
+    }
+
+    impl<T> super::Wire for T
+    where
+        T: Marker + WireHelper<T::Marker> + ?Sized,
+    {
+        type Output<'a> = T::Output<'a>;
+
+        fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
+        {
+            <T as WireHelper<T::Marker>>::wire_write(self, buf)
+        }
+
+        fn wire_read<'buf>(
+            buf: &'buf [u32],
+        ) -> Result<(&'buf [u32], Self::Output<'buf>), super::WireError>
+        {
+            <T as WireHelper<T::Marker>>::wire_read(buf)
+        }
+
+        fn wire_size(&self) -> usize
+        {
+            <T as WireHelper<T::Marker>>::wire_size(self)
+        }
+    }
+
+    pub trait Marker
+    {
+        type Marker;
+    }
+
+    pub enum WirePrimitiveMarker {}
+
+    pub enum WireDynamicMarker {}
+
+    #[rustfmt::skip] impl Marker for i32 { type Marker = WirePrimitiveMarker; }
+    #[rustfmt::skip] impl Marker for u32 { type Marker = WirePrimitiveMarker; }
+    #[rustfmt::skip] impl<T> Marker for crate::Int<T> where T: crate::Enum { type Marker = WirePrimitiveMarker; }
+    #[rustfmt::skip] impl<T> Marker for crate::Uint<T> where T: crate::Enum { type Marker = WirePrimitiveMarker; }
+    #[rustfmt::skip] impl Marker for crate::Fixed { type Marker = WirePrimitiveMarker; }
+    #[rustfmt::skip] impl Marker for crate::Object { type Marker = WirePrimitiveMarker; }
+
+    #[rustfmt::skip] impl Marker for [u8] { type Marker = WireDynamicMarker; }
+    #[rustfmt::skip] impl Marker for std::ffi::CStr { type Marker = WireDynamicMarker; }
+    #[rustfmt::skip] impl Marker for str { type Marker = WireDynamicMarker; }
+    #[rustfmt::skip] impl<T> Marker for &T where T: Marker { type Marker = T::Marker; }
 }
