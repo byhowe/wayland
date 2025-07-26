@@ -496,16 +496,17 @@ where
     }
 }
 
-// FIX: Do we need this impl? I think it is good to have.
 impl Wire for String
 {
     type Output<'a> = String;
 
+    #[inline]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         self.as_str().wire_write(buf)
     }
 
+    #[inline]
     fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>
     {
         <str as Wire>::wire_read(buf).map(|(buf, value)| (buf, value.to_string()))
@@ -522,11 +523,13 @@ impl Wire for Cow<'_, str>
 {
     type Output<'a> = Cow<'a, str>;
 
+    #[inline]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         self.as_ref().wire_write(buf)
     }
 
+    #[inline]
     fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>
     {
         <str as Wire>::wire_read(buf).map(|(buf, value)| (buf, Cow::Borrowed(value)))
@@ -543,11 +546,13 @@ impl Wire for Vec<u8>
 {
     type Output<'a> = Vec<u8>;
 
+    #[inline]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         self.as_slice().wire_write(buf)
     }
 
+    #[inline]
     fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>
     {
         let (buf, value) = <[u8] as Wire>::wire_read(buf)?;
@@ -565,17 +570,20 @@ impl Wire for Cow<'_, [u8]>
 {
     type Output<'a> = Cow<'a, [u8]>;
 
+    #[inline]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
         self.as_ref().wire_write(buf)
     }
 
+    #[inline]
     fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), WireError>
     {
         let (buf, value) = <[u8] as Wire>::wire_read(buf)?;
         Ok((buf, Cow::Borrowed(value)))
     }
 
+    #[inline]
     fn wire_size(&self) -> usize
     {
         self.as_ref().wire_size()
@@ -646,8 +654,6 @@ where
         }
     }
 }
-
-pub trait WireAncillary: Sized {}
 
 mod helper
 {
