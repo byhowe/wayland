@@ -7,9 +7,8 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 use wayland_core::Header;
-use wayland_core::Message;
+use wayland_core::MessageOpcode;
 use wayland_core::Object;
-use wayland_core::Opcode;
 use wayland_core::Wire;
 use wayland_core::bytes;
 use wayland_core::prepare_buf;
@@ -60,7 +59,7 @@ impl Connection
         })
     }
 
-    pub fn send_message<O: Into<Object>, M: Wire + Opcode>(
+    pub fn send_message<O: Into<Object>, M: Wire + MessageOpcode>(
         &mut self,
         object: O,
         msg: &M,

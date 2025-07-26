@@ -1,16 +1,33 @@
-pub trait Message
+use std::mem::MaybeUninit;
+
+use crate::WireError;
+
+pub trait MessageWire: Sized
 {
-    const OPCODE: u16;
+    type Output<'a>: 'a;
 
-    /// Calculates how many words (u32) are needed to send this message, not
-    /// including the header.
-    fn size(&self) -> usize;
+    fn message_write(&self, buf: &mut [u32]);
 
-    // Write the message to the buffer, not including the header.
-    fn write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32];
+    #[must_use]
+    fn message_read_into<'buf>(
+        buf: &'buf [u32],
+        msg: &mut MaybeUninit<Self::Output<'buf>>,
+    ) -> Result<(), WireError>;
+
+    #[must_use]
+    fn message_size(&self) -> usize;
+
+    #[inline]
+    #[must_use]
+    fn message_read<'buf>(buf: &'buf [u32]) -> Result<MaybeUninit<Self::Output<'buf>>, WireError>
+    {
+        let mut msg = MaybeUninit::uninit();
+        Self::message_read_into(buf, &mut msg)?;
+        Ok(msg)
+    }
 }
 
-pub trait Opcode
+pub trait MessageOpcode
 {
     const OPCODE: u16;
 }

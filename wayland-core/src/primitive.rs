@@ -177,11 +177,6 @@ impl From<Object> for u32
 /// A new id is a non-nullable object id.
 pub type NewId = Object;
 
-// TODO: implement fd
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct Fd(i32);
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Header
 {
