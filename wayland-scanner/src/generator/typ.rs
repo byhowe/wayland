@@ -17,24 +17,50 @@ impl Type<'_>
 {
     pub fn string(&self) -> TokenStream
     {
+        let lt = self.lifetime();
         match self.ctx {
-            TypeContext::Struct { lifetime } => {
-                let lt = syn::parse_str::<Lifetime>(lifetime).unwrap();
-                quote! { ::std::borrow::Cow<#lt, str> }
-            }
+            TypeContext::Struct { .. } => quote! { ::std::borrow::Cow<#lt, str> },
             TypeContext::Function => quote! { &str },
         }
     }
 
     pub fn array(&self) -> TokenStream
     {
+        let lt = self.lifetime();
         match self.ctx {
-            TypeContext::Struct { lifetime } => {
-                let lt = syn::parse_str::<Lifetime>(lifetime).unwrap();
-                quote! { ::std::borrow::Cow<#lt, [u8]> }
-            }
+            TypeContext::Struct { .. } => quote! { ::std::borrow::Cow<#lt, [u8]> },
             TypeContext::Function => quote! { &[u8] },
         }
+    }
+
+    pub fn fd(&self) -> TokenStream
+    {
+        let lt = self.lifetime();
+        match self.ctx {
+            TypeContext::Struct { request: true, .. } => quote! { ::std::os::fd::BorrowedFd<#lt> },
+            TypeContext::Struct { .. } => quote! { ::std::os::fd::OwnedFd },
+            TypeContext::Function => quote! { ::std::os::fd::BorrowedFd<'_> },
+        }
+    }
+
+    pub fn lifetime(&self) -> Option<Lifetime>
+    {
+        let lifetime = match self.typ {
+            schema::Type::String { .. } => match self.ctx {
+                TypeContext::Struct { lifetime, .. } => Some(lifetime),
+                _ => None,
+            },
+            schema::Type::Array => match self.ctx {
+                TypeContext::Struct { lifetime, .. } => Some(lifetime),
+                _ => None,
+            },
+            schema::Type::Fd => match self.ctx {
+                TypeContext::Struct { request, lifetime } if request => Some(lifetime),
+                _ => None,
+            },
+            _ => None,
+        };
+        lifetime.map(|lifetime| syn::parse_str(lifetime).unwrap())
     }
 }
 
@@ -44,6 +70,7 @@ impl ToTokens for Type<'_>
     {
         let string = self.string();
         let array = self.array();
+        let fd = self.fd();
 
         match self.typ {
             schema::Type::Int { enu: None } => quote! { i32 },
@@ -76,7 +103,7 @@ impl ToTokens for Type<'_>
                 }
             }
             schema::Type::Array => quote! { #array },
-            schema::Type::Fd => quote! { ::wayland_core::Fd },
+            schema::Type::Fd => quote! { #fd },
         }
         .to_tokens(tokens);
     }
@@ -87,6 +114,8 @@ pub enum TypeContext
 {
     Struct
     {
+        // false = event, true = request
+        request: bool,
         lifetime: &'static str,
     },
     Function,

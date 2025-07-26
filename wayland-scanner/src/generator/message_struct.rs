@@ -9,7 +9,11 @@ use crate::generator::*;
 use crate::util::snake_to_camel;
 
 #[derive(Debug, Clone)]
-pub struct MessageStruct<'a>(pub &'a schema::Message);
+pub struct MessageStruct<'a>
+{
+    pub msg: &'a schema::Message,
+    pub request: bool,
+}
 
 impl MessageStruct<'_>
 {
@@ -20,17 +24,23 @@ impl MessageStruct<'_>
 
     pub fn name(&self) -> Ident
     {
-        Self::format_name(&self.0.name)
+        Self::format_name(&self.msg.name)
     }
 
     pub fn generics(&self) -> Option<TokenStream>
     {
-        self.0
+        self.msg
             .args
             .iter()
-            .find(|arg| match arg.typ {
-                schema::Type::String { .. } | schema::Type::Array => true,
-                _ => false,
+            .find_map(|arg| {
+                Type {
+                    typ: &arg.typ,
+                    ctx: TypeContext::Struct {
+                        request: self.request,
+                        lifetime: "'a",
+                    },
+                }
+                .lifetime()
             })
             .is_some()
             .then_some(quote! { <'a> })
@@ -44,15 +54,14 @@ impl ToTokens for MessageStruct<'_>
         let message_name = self.name();
         let message_generics_a = self.generics();
         let message_elided_generic = message_generics_a.clone().map(|_| quote! { <'_> });
-        // FIX: temporarily disable fd.
-        let message_fields = self.0.args.iter().filter_map(|arg| match arg.typ {
-            schema::Type::Fd => None,
-            _ => Some(ArgField {
-                arg,
-                ctx: TypeContext::Struct { lifetime: "'a" },
-            }),
+        let message_fields = self.msg.args.iter().map(|arg| ArgField {
+            arg,
+            ctx: TypeContext::Struct {
+                request: self.request,
+                lifetime: "'a",
+            },
         });
-        let message_opcode = self.0.opcode;
+        let message_opcode = self.msg.opcode;
 
         let wire_arguments = message_fields
             .clone()
@@ -71,38 +80,55 @@ impl ToTokens for MessageStruct<'_>
                 t => {
                     let type_path = Type {
                         typ: t,
-                        ctx: TypeContext::Struct { lifetime: "'_" },
+                        ctx: TypeContext::Struct {
+                            request: self.request,
+                            lifetime: "'_",
+                        },
                     };
                     Some(quote! { <#type_path as ::wayland_core::Wire> })
                 }
             });
 
+        let derives = &[
+            Some(quote! { Debug }),
+            self.request.then_some(quote! { Clone }),
+        ];
+
         quote! {
-            #[derive(Debug, Clone, PartialEq, Eq)]
+            #[derive(#(#derives),*)]
             pub struct #message_name #message_generics_a {
                 #(pub #message_fields,)*
             }
 
-            impl #message_generics_a ::wayland_core::Opcode for #message_name #message_generics_a {
+            impl #message_generics_a ::wayland_core::MessageOpcode for #message_name #message_generics_a {
                 const OPCODE: u16 = #message_opcode;
             }
 
-            impl ::wayland_core::Wire for #message_name #message_elided_generic {
+            impl ::wayland_core::MessageWire for #message_name #message_elided_generic {
                 type Output<'a> = #message_name #message_generics_a;
 
-                fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32] {
+                fn message_write(&self, buf: &mut [u32]) {
+                    use ::wayland_core::Wire;
                     #(let buf = self.#wire_arguments.wire_write(buf);)*
-                    buf
+                    _ = buf;
                 }
 
-                fn wire_read<'buf>(buf: &'buf [u32]) -> Result<(&'buf [u32], Self::Output<'buf>), ::wayland_core::WireError> {
+                fn message_read_into<'buf>(
+                    buf: &'buf[u32],
+                    msg: &mut ::std::mem::MaybeUninit<Self::Output<'buf>>
+                ) -> Result<(), ::wayland_core::WireError> {
+                    let __ptr = msg.as_mut_ptr();
+
                     #(let (buf, #wire_arguments) = #wire_argument_types::wire_read(buf)?;)*
-                    Ok((buf, #message_name {
-                        #(#wire_arguments,)*
-                    }))
+                    #(unsafe { (&raw mut ((*__ptr).#wire_arguments)).write(#wire_arguments) };)*
+
+                    _ = buf;
+
+                    Ok(())
                 }
 
-                fn wire_size(&self) -> usize {
+                fn message_size(&self) -> usize {
+                    use ::wayland_core::Wire;
                     0 #(+ self.#wire_arguments.wire_size())*
                 }
             }

@@ -32,8 +32,15 @@ impl ToTokens for InterfaceModule<'_>
 
         let interface_struct = InterfaceStruct(self.0);
 
-        let requests = self.0.requests.iter().map(|msg| MessageStruct(msg));
-        let events = self.0.events.iter().map(|msg| MessageStruct(msg));
+        let requests = self
+            .0
+            .requests
+            .iter()
+            .map(|msg| MessageStruct { msg, request: true });
+        let events = self.0.events.iter().map(|msg| MessageStruct {
+            msg,
+            request: false,
+        });
         let enums = self.0.enums.iter().map(|enu| Enum(enu));
 
         quote! {
