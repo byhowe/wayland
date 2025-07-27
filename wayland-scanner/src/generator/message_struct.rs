@@ -3,6 +3,7 @@ use quote::ToTokens;
 use quote::format_ident;
 use quote::quote;
 use syn::Ident;
+use syn::Lifetime;
 use wayland_xml::schema;
 
 use crate::generator::*;
@@ -27,23 +28,47 @@ impl MessageStruct<'_>
         Self::format_name(&self.msg.name)
     }
 
-    pub fn generics(&self) -> Option<TokenStream>
+    pub fn generics(&self, lifetime: &'static str) -> Option<TokenStream>
     {
-        self.msg
-            .args
-            .iter()
-            .find_map(|arg| {
-                Type {
-                    typ: &arg.typ,
-                    ctx: TypeContext::Struct {
-                        request: self.request,
-                        lifetime: "'a",
-                    },
-                }
-                .lifetime()
-            })
-            .is_some()
-            .then_some(quote! { <'a> })
+        let lt = syn::parse_str::<Lifetime>(lifetime).unwrap();
+
+        let has_lifetime = self.msg.args.iter().any(|arg| {
+            Type {
+                typ: &arg.typ,
+                ctx: TypeContext::Struct { lifetime },
+            }
+            .needs_lifetime()
+        });
+        let has_fd = self.msg.args.iter().any(|arg| {
+            Type {
+                typ: &arg.typ,
+                ctx: TypeContext::Struct { lifetime },
+            }
+            .needs_fd_generic()
+        });
+
+        let generics = [
+            has_lifetime.then_some(quote! { #lt }),
+            has_fd.then_some(quote! { Fd }),
+        ]
+        .into_iter()
+        .filter_map(|x| x)
+        .collect::<Vec<_>>();
+
+        (has_lifetime || has_fd).then_some(quote! { < #(#generics),* > })
+    }
+
+    pub fn fd_generic(&self) -> Option<TokenStream>
+    {
+        let has_fd = self.msg.args.iter().any(|arg| {
+            Type {
+                typ: &arg.typ,
+                ctx: TypeContext::Struct { lifetime: "" },
+            }
+            .needs_fd_generic()
+        });
+
+        has_fd.then_some(quote! { <Fd> })
     }
 }
 
@@ -52,14 +77,12 @@ impl ToTokens for MessageStruct<'_>
     fn to_tokens(&self, tokens: &mut TokenStream)
     {
         let message_name = self.name();
-        let message_generics_a = self.generics();
-        let message_elided_generic = message_generics_a.clone().map(|_| quote! { <'_> });
+        let message_generics = self.generics("'a");
+        let message_elided_generic = self.generics("'_");
+        let message_fd_generic = self.fd_generic();
         let message_fields = self.msg.args.iter().map(|arg| ArgField {
             arg,
-            ctx: TypeContext::Struct {
-                request: self.request,
-                lifetime: "'a",
-            },
+            ctx: TypeContext::Struct { lifetime: "'a" },
         });
         let message_opcode = self.msg.opcode;
 
@@ -73,6 +96,7 @@ impl ToTokens for MessageStruct<'_>
                 }
             })
             .collect::<Vec<_>>();
+
         let wire_argument_types = message_fields
             .clone()
             .filter_map(|field| match &field.arg.typ {
@@ -80,32 +104,30 @@ impl ToTokens for MessageStruct<'_>
                 t => {
                     let type_path = Type {
                         typ: t,
-                        ctx: TypeContext::Struct {
-                            request: self.request,
-                            lifetime: "'_",
-                        },
+                        ctx: TypeContext::Struct { lifetime: "'_" },
                     };
                     Some(quote! { <#type_path as ::wayland_core::Wire> })
                 }
             });
 
-        let derives = &[
-            Some(quote! { Debug }),
-            self.request.then_some(quote! { Clone }),
-        ];
+        //let derives = &[
+        //    Some(quote! { Debug }),
+        //    self.request.then_some(quote! { Clone }),
+        //];
 
         quote! {
-            #[derive(#(#derives),*)]
-            pub struct #message_name #message_generics_a {
+            //#[derive(#(#derives),*)]
+            #[derive(Debug)]
+            pub struct #message_name #message_generics {
                 #(pub #message_fields,)*
             }
 
-            impl #message_generics_a ::wayland_core::MessageOpcode for #message_name #message_generics_a {
+            impl #message_generics ::wayland_core::MessageOpcode for #message_name #message_generics {
                 const OPCODE: u16 = #message_opcode;
             }
 
-            impl ::wayland_core::MessageWire for #message_name #message_elided_generic {
-                type Output<'a> = #message_name #message_generics_a;
+            impl #message_fd_generic ::wayland_core::MessageWire for #message_name #message_elided_generic {
+                type Output<'a> = #message_name #message_generics;
 
                 fn message_write(&self, buf: &mut [u32]) {
                     use ::wayland_core::Wire;

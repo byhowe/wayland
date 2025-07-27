@@ -46,7 +46,7 @@ impl ToTokens for InterfaceModule<'_>
         quote! {
             pub mod #interface_name {
                 use super::__protocol_root;
-                // refers to the current protocol intercace
+                // refers to the current protocol interface
                 use super::#interface_name as __interface_root;
 
                 pub(crate) const INTERFACE_NAME: &'static str = #raw_interface_name;

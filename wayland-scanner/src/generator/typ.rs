@@ -35,10 +35,8 @@ impl Type<'_>
 
     pub fn fd(&self) -> TokenStream
     {
-        let lt = self.lifetime();
         match self.ctx {
-            TypeContext::Struct { request: true, .. } => quote! { ::std::os::fd::BorrowedFd<#lt> },
-            TypeContext::Struct { .. } => quote! { ::std::os::fd::OwnedFd },
+            TypeContext::Struct { .. } => quote! { Fd },
             TypeContext::Function => quote! { ::std::os::fd::BorrowedFd<'_> },
         }
     }
@@ -54,13 +52,20 @@ impl Type<'_>
                 TypeContext::Struct { lifetime, .. } => Some(lifetime),
                 _ => None,
             },
-            schema::Type::Fd => match self.ctx {
-                TypeContext::Struct { request, lifetime } if request => Some(lifetime),
-                _ => None,
-            },
             _ => None,
         };
         lifetime.map(|lifetime| syn::parse_str(lifetime).unwrap())
+    }
+
+    pub fn needs_lifetime(&self) -> bool
+    {
+        matches!(self.typ, schema::Type::String { .. } | schema::Type::Array)
+            && matches!(self.ctx, TypeContext::Struct { .. })
+    }
+
+    pub fn needs_fd_generic(&self) -> bool
+    {
+        matches!(self.typ, schema::Type::Fd) && matches!(self.ctx, TypeContext::Struct { .. })
     }
 }
 
@@ -114,8 +119,6 @@ pub enum TypeContext
 {
     Struct
     {
-        // false = event, true = request
-        request: bool,
         lifetime: &'static str,
     },
     Function,
