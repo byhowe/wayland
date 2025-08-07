@@ -128,7 +128,7 @@ pub trait Wire
     /// For primitive types, this is typically `Self`.
     /// For dynamic types, this is usually a borrowed reference like `&[u8]` or
     /// `&str`.
-    type Output<'a>: 'a;
+    type Output<'buf>: 'buf;
 
     /// Write this value to the buffer, returning the remaining buffer slice.
     ///
@@ -185,7 +185,7 @@ pub trait WirePrimitive: Copy
 pub trait WireDynamic
 {
     /// The type returned when reading from the wire format.
-    type Output<'a>: 'a;
+    type Output<'buf>: 'buf;
 
     /// Get the raw byte data for this value.
     fn data(&self) -> &[u8];
@@ -319,7 +319,7 @@ impl<T> helper::WireHelper<helper::WirePrimitiveMarker> for T
 where
     T: WirePrimitive + 'static,
 {
-    type Output<'a> = T;
+    type Output<'buf> = T;
 
     #[inline]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
@@ -348,7 +348,7 @@ where
 
 impl WireDynamic for [u8]
 {
-    type Output<'a> = &'a [u8];
+    type Output<'buf> = &'buf [u8];
 
     #[inline]
     fn data(&self) -> &[u8]
@@ -365,7 +365,7 @@ impl WireDynamic for [u8]
 
 impl WireDynamic for CStr
 {
-    type Output<'a> = &'a CStr;
+    type Output<'buf> = &'buf CStr;
 
     #[inline]
     fn data(&self) -> &[u8]
@@ -382,7 +382,7 @@ impl WireDynamic for CStr
 
 impl WireDynamic for str
 {
-    type Output<'a> = &'a str;
+    type Output<'buf> = &'buf str;
 
     #[inline]
     fn data(&self) -> &[u8]
@@ -424,7 +424,7 @@ impl<T> WireDynamic for &T
 where
     T: WireDynamic,
 {
-    type Output<'a> = T::Output<'a>;
+    type Output<'buf> = T::Output<'buf>;
 
     #[inline]
     fn data(&self) -> &[u8]
@@ -455,7 +455,7 @@ impl<T> helper::WireHelper<helper::WireDynamicMarker> for T
 where
     T: WireDynamic + ?Sized,
 {
-    type Output<'a> = T::Output<'a>;
+    type Output<'buf> = T::Output<'buf>;
 
     fn wire_write<'buf>(&self, mut buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
@@ -498,7 +498,7 @@ where
 
 impl Wire for String
 {
-    type Output<'a> = String;
+    type Output<'buf> = String;
 
     #[inline]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
@@ -521,7 +521,7 @@ impl Wire for String
 
 impl Wire for Cow<'_, str>
 {
-    type Output<'a> = Cow<'a, str>;
+    type Output<'buf> = Cow<'buf, str>;
 
     #[inline]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
@@ -544,7 +544,7 @@ impl Wire for Cow<'_, str>
 
 impl Wire for Vec<u8>
 {
-    type Output<'a> = Vec<u8>;
+    type Output<'buf> = Vec<u8>;
 
     #[inline]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
@@ -568,7 +568,7 @@ impl Wire for Vec<u8>
 
 impl Wire for Cow<'_, [u8]>
 {
-    type Output<'a> = Cow<'a, [u8]>;
+    type Output<'buf> = Cow<'buf, [u8]>;
 
     #[inline]
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
@@ -592,7 +592,7 @@ impl Wire for Cow<'_, [u8]>
 
 impl Wire for Header
 {
-    type Output<'a> = Header;
+    type Output<'buf> = Header;
 
     fn wire_write<'buf>(&self, mut buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
@@ -626,7 +626,7 @@ impl<T> Wire for Option<T>
 where
     T: Wire,
 {
-    type Output<'a> = Option<T::Output<'a>>;
+    type Output<'buf> = Option<T::Output<'buf>>;
 
     fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
     {
@@ -659,7 +659,7 @@ mod helper
 {
     pub trait WireHelper<M>
     {
-        type Output<'a>: 'a;
+        type Output<'buf>: 'buf;
 
         #[must_use]
         fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32];
@@ -677,7 +677,7 @@ mod helper
     where
         T: Marker + WireHelper<T::Marker> + ?Sized,
     {
-        type Output<'a> = T::Output<'a>;
+        type Output<'buf> = T::Output<'buf>;
 
         fn wire_write<'buf>(&self, buf: &'buf mut [u32]) -> &'buf mut [u32]
         {
