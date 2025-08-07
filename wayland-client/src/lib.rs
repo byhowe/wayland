@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use thiserror::Error;
 use wayland_core::Header;
 use wayland_core::MessageOpcode;
+use wayland_core::MessageWire;
 use wayland_core::Object;
 use wayland_core::Wire;
 use wayland_core::bytes;
@@ -55,18 +56,18 @@ impl Connection
         })
     }
 
-    pub fn send_message<O: Into<Object>, M: Wire + MessageOpcode>(
+    pub fn send_message<O: Into<Object>, M: MessageWire + MessageOpcode>(
         &mut self,
         object: O,
         msg: &M,
     ) -> io::Result<()>
     {
-        let size = 2 + msg.wire_size();
+        let size = 2 + msg.message_size();
         let header = Header::new(object.into(), size as u16 * 4, M::OPCODE);
 
         prepare_buf(&mut self.buf, size);
         let buf = header.wire_write(&mut self.buf);
-        _ = msg.wire_write(buf);
+        msg.message_write(buf);
 
         self.stream.write_all(bytes(&self.buf))?;
 
