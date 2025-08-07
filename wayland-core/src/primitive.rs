@@ -1,5 +1,6 @@
 use std::fmt;
 use std::hint;
+use std::marker::PhantomData;
 use std::num::NonZero;
 use std::os::fd::AsFd;
 use std::os::fd::AsRawFd;
@@ -135,33 +136,54 @@ impl From<Fixed> for f64
 /// Wayland object ID
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct Object(NonZero<u32>);
+pub struct Object<T = ()>
+{
+    inner: NonZero<u32>,
+    phantom: PhantomData<T>,
+}
 
-impl Object
+impl<T> Object<T>
 {
     /// Create a new ObjectId, with validation that it's non-zero
     pub const fn new(id: u32) -> Option<Self>
     {
         match NonZero::new(id) {
             None => None,
-            Some(value) => Some(Object(value)),
+            Some(value) => Some(Object {
+                inner: value,
+                phantom: PhantomData,
+            }),
         }
     }
 
     /// Create a new ObjectId without validation (for internal use)
     pub const unsafe fn new_unchecked(id: u32) -> Self
     {
-        unsafe { Object(NonZero::new_unchecked(id)) }
+        unsafe {
+            Object {
+                inner: NonZero::new_unchecked(id),
+                phantom: PhantomData,
+            }
+        }
     }
 
     /// Get the raw u32 value
     pub const fn get(self) -> u32
     {
-        self.0.get()
+        self.inner.get()
+    }
+
+    // Strip the object id of its interface type information.
+    pub const fn plain(self) -> Object
+    {
+        Object {
+            inner: self.inner,
+            phantom: PhantomData,
+        }
     }
 }
 
-impl TryFrom<u32> for Object
+impl<T> TryFrom<u32> for Object<T>
 {
     type Error = ();
 
@@ -171,16 +193,16 @@ impl TryFrom<u32> for Object
     }
 }
 
-impl From<Object> for u32
+impl<T> From<Object<T>> for u32
 {
-    fn from(value: Object) -> Self
+    fn from(value: Object<T>) -> Self
     {
         value.get()
     }
 }
 
 /// A new id is a non-nullable object id.
-pub type NewId = Object;
+pub type NewId<T = ()> = Object<T>;
 
 #[derive(Debug)]
 pub enum Fd<'fd>

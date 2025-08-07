@@ -300,7 +300,9 @@ impl WirePrimitive for Fixed
     }
 }
 
-impl WirePrimitive for Object
+impl<T> WirePrimitive for Object<T>
+where
+    T: Copy,
 {
     #[inline]
     fn value(self) -> u32
@@ -711,7 +713,7 @@ mod helper
     #[rustfmt::skip] impl<T> Marker for crate::Int<T> where T: crate::Enum { type Marker = WirePrimitiveMarker; }
     #[rustfmt::skip] impl<T> Marker for crate::Uint<T> where T: crate::Enum { type Marker = WirePrimitiveMarker; }
     #[rustfmt::skip] impl Marker for crate::Fixed { type Marker = WirePrimitiveMarker; }
-    #[rustfmt::skip] impl Marker for crate::Object { type Marker = WirePrimitiveMarker; }
+    #[rustfmt::skip] impl<T> Marker for crate::Object<T> { type Marker = WirePrimitiveMarker; }
 
     #[rustfmt::skip] impl Marker for [u8] { type Marker = WireDynamicMarker; }
     #[rustfmt::skip] impl Marker for std::ffi::CStr { type Marker = WireDynamicMarker; }
