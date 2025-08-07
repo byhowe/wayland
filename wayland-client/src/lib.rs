@@ -16,13 +16,9 @@ use wayland_core::prepare_buf;
 #[rustfmt::skip]
 pub mod protocol
 {
-    pub mod wayland {
-        #![allow(unreachable_code)]
+    #![allow(unreachable_code)]
 
-        use wayland_scanner::generate;
-
-        generate!("../upstream/wayland/protocol/wayland.xml");
-    }
+    wayland_scanner::generate!("../upstream/wayland/protocol/wayland.xml");
 }
 
 pub struct Connection
