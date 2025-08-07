@@ -476,7 +476,7 @@ impl<'a> Arg<'a>
                 let struct_path: syn::Path = interface
                     .as_ref()
                     .map(|it| self.interface().resolve_interface_struct_path(it.as_str()))
-                    .map(|it| syn::parse_quote! { super::super::#it })
+                    .map(|it| syn::parse_quote! { #default_type <super::super::#it> })
                     .unwrap_or(default_type);
                 match nullable {
                     false => quote! { #struct_path },

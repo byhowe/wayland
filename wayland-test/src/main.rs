@@ -5,12 +5,12 @@ use std::io::Read;
 
 use wayland_client::Connection;
 use wayland_client::protocol::wayland::wl_callback::WlCallback;
-use wayland_client::protocol::wayland::wl_display::WlDisplay;
-use wayland_client::protocol::wayland::wl_registry::WlRegistry;
 use wayland_client::protocol::wayland::wl_callback::event::Done;
+use wayland_client::protocol::wayland::wl_display::WlDisplay;
 use wayland_client::protocol::wayland::wl_display::event::Error;
 use wayland_client::protocol::wayland::wl_display::request::GetRegistry;
 use wayland_client::protocol::wayland::wl_display::request::Sync;
+use wayland_client::protocol::wayland::wl_registry::WlRegistry;
 use wayland_client::protocol::wayland::wl_registry::event::Global;
 use wayland_core::Header;
 use wayland_core::MessageOpcode;
@@ -32,9 +32,9 @@ fn main()
     let mut conn = Connection::connect().unwrap();
     let mut buf = Vec::new();
 
-    let id_display: WlDisplay = Object::new(1).unwrap().into(); // wl_display (always assigned to 1)
-    let id_registry: WlRegistry = Object::new(2).unwrap().into(); // wl_registry
-    let id_callback: WlCallback = Object::new(3).unwrap().into(); // wl_callback
+    let id_display = Object::<WlDisplay>::new(1).unwrap(); // wl_display (always assigned to 1)
+    let id_registry = Object::<WlRegistry>::new(2).unwrap(); // wl_registry
+    let id_callback = Object::<WlCallback>::new(3).unwrap(); // wl_callback
 
     // -- GET REGISTRY --
     conn.send_message(
@@ -82,17 +82,17 @@ fn main()
         conn.stream.read_exact(bytes_mut(&mut buf)).unwrap();
 
         match header.opcode {
-            Global::OPCODE if header.object == id_registry.into() => {
+            Global::OPCODE if header.object == id_registry.plain() => {
                 let evt = unsafe { Global::message_read(&buf).unwrap().assume_init() };
                 println!("{:?}", evt);
             }
-            Done::OPCODE if header.object == id_callback.into() => {
+            Done::OPCODE if header.object == id_callback.plain() => {
                 let evt = unsafe { Done::message_read(&buf).unwrap().assume_init() };
                 println!("{:?}", evt);
 
                 break;
             }
-            Error::OPCODE if header.object == id_display.into() => {
+            Error::OPCODE if header.object == id_display.plain() => {
                 let evt = unsafe { Error::message_read(&buf).unwrap().assume_init() };
                 println!("{:?}", evt);
             }

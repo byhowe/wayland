@@ -56,14 +56,14 @@ impl Connection
         })
     }
 
-    pub fn send_message<O: Into<Object>, M: MessageWire + MessageOpcode>(
+    pub fn send_message<T, O: Into<Object<T>>, M: MessageWire + MessageOpcode>(
         &mut self,
         object: O,
         msg: &M,
     ) -> io::Result<()>
     {
         let size = 2 + msg.message_size();
-        let header = Header::new(object.into(), size as u16 * 4, M::OPCODE);
+        let header = Header::new(object.into().plain(), size as u16 * 4, M::OPCODE);
 
         prepare_buf(&mut self.buf, size);
         let buf = header.wire_write(&mut self.buf);
