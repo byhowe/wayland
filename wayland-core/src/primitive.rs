@@ -1,5 +1,10 @@
 use std::fmt;
+use std::hint;
 use std::num::NonZero;
+use std::os::fd::AsFd;
+use std::os::fd::AsRawFd;
+use std::os::fd::BorrowedFd;
+use std::os::fd::OwnedFd;
 
 use crate::Enum;
 
@@ -176,6 +181,94 @@ impl From<Object> for u32
 
 /// A new id is a non-nullable object id.
 pub type NewId = Object;
+
+#[derive(Debug)]
+pub enum Fd<'fd>
+{
+    Borrowed(BorrowedFd<'fd>),
+    Owned(OwnedFd),
+}
+
+impl AsFd for Fd<'_>
+{
+    #[inline]
+    fn as_fd(&self) -> BorrowedFd<'_>
+    {
+        match self {
+            Self::Borrowed(fd) => fd.as_fd(),
+            Self::Owned(fd) => fd.as_fd(),
+        }
+    }
+}
+
+impl AsRawFd for Fd<'_>
+{
+    #[inline]
+    fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd
+    {
+        match self {
+            Fd::Borrowed(fd) => fd.as_raw_fd(),
+            Fd::Owned(fd) => fd.as_raw_fd(),
+        }
+    }
+}
+
+impl<'fd> Fd<'fd>
+{
+    #[inline]
+    pub fn unwrap_borrowed(self) -> Option<BorrowedFd<'fd>>
+    {
+        match self {
+            Fd::Borrowed(fd) => Some(fd),
+            Fd::Owned(_) => None,
+        }
+    }
+
+    #[inline]
+    pub fn unwrap_owned(self) -> Option<OwnedFd>
+    {
+        match self {
+            Fd::Borrowed(_) => None,
+            Fd::Owned(fd) => Some(fd),
+        }
+    }
+
+    #[inline]
+    pub unsafe fn unwrap_borrowed_unchecked(self) -> BorrowedFd<'fd>
+    {
+        match self {
+            Fd::Borrowed(fd) => fd,
+            Fd::Owned(_) => unsafe { hint::unreachable_unchecked() },
+        }
+    }
+
+    #[inline]
+    pub unsafe fn unwrap_owned_unchecked(self) -> OwnedFd
+    {
+        match self {
+            Fd::Borrowed(_) => unsafe { hint::unreachable_unchecked() },
+            Fd::Owned(fd) => fd,
+        }
+    }
+}
+
+impl<'fd> From<BorrowedFd<'fd>> for Fd<'fd>
+{
+    #[inline]
+    fn from(value: BorrowedFd<'fd>) -> Self
+    {
+        Self::Borrowed(value)
+    }
+}
+
+impl<'fd> From<OwnedFd> for Fd<'fd>
+{
+    #[inline]
+    fn from(value: OwnedFd) -> Self
+    {
+        Self::Owned(value)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Header
