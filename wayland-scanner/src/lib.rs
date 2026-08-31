@@ -1,6 +1,3 @@
-#![feature(trim_prefix_suffix)]
-#![feature(exact_size_is_empty)]
-
 use std::env;
 use std::fs;
 use std::fs::File;
@@ -10,7 +7,6 @@ use std::path::PathBuf;
 use syn::Token;
 use syn::parse::Parse;
 use syn::parse::ParseStream;
-use syn::parse_macro_input;
 
 //use crate::generator::Protocol;
 use crate::wayland::Protocol;
