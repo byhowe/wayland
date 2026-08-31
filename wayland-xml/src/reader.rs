@@ -119,6 +119,7 @@ impl Interface
     {
         let mut name = None;
         let mut version = None;
+        let mut frozen = false;
 
         let inner = match root {
             Event::Start(data) => data,
@@ -130,6 +131,8 @@ impl Interface
             match k.0 {
                 b"name" => name = Some(str::from_utf8(&v).unwrap().to_string()),
                 b"version" => version = Some(str::from_utf8(&v).unwrap().parse().unwrap()),
+                b"frozen" if v.as_ref() == b"true" => frozen = true,
+                b"frozen" if v.as_ref() == b"false" => frozen = false,
                 _ => panic!("unexpected attribute: {:?}", Attribute { key: k, value: v }),
             }
         }
@@ -180,6 +183,7 @@ impl Interface
         Self {
             name: name.unwrap(),
             version: version.unwrap(),
+            frozen,
             description,
             requests,
             events,

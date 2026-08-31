@@ -20,6 +20,7 @@ pub struct Interface
 {
     pub name: String,
     pub version: u32,
+    pub frozen: bool,
     pub description: Option<Description>,
     pub requests: Vec<Message>,
     pub events: Vec<Message>,
