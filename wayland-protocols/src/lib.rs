@@ -212,9 +212,19 @@ generate!(
 );
 
 generate!(
+    "../upstream/wayland-protocols/experimental/xx-text-input/xx-text-input-v3.xml",
+    dependencies: [
+        crate::wayland::wl_surface,
+        crate::wayland::wl_seat,
+    ],
+);
+
+generate!(
     "../upstream/wayland-protocols/experimental/xx-input-method/xx-input-method-v2.xml",
     dependencies: [
-        crate::wayland::wl_seat, crate::text_input_unstable_v3::zwp_text_input_v3,
+        crate::wayland::wl_seat,
+        crate::wayland::wl_surface,
+        crate::xx_text_input_unstable_v3::xx_text_input_v3,
     ],
 );
 
